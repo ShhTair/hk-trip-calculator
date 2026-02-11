@@ -1,10 +1,11 @@
 import { useState } from 'react';
-import { Calculator, Users, Hotel, Utensils, Sparkles, DollarSign, TrendingUp, Settings as SettingsIcon, MapPin, Plane, Plus, Edit2, Trash2, Camera } from 'lucide-react';
+import { Calculator, Users, Hotel, Utensils, Sparkles, DollarSign, TrendingUp, Settings as SettingsIcon, MapPin, Plane, Plus, Edit2, Trash2, Camera, Percent, PieChart } from 'lucide-react';
 
 interface Settings {
   students: number;
   mentors: number;
   pricePerStudent: number;
+  taxPercent: number;
 }
 
 interface Hotel {
@@ -153,7 +154,8 @@ function App() {
   const [settings, setSettings] = useState<Settings>({
     students: 24,
     mentors: 2,
-    pricePerStudent: 0
+    pricePerStudent: 0,
+    taxPercent: 0
   });
 
   const [hotels, setHotels] = useState<Hotel[]>(INITIAL_HOTELS);
@@ -270,8 +272,12 @@ function App() {
   // Revenue (only students pay)
   const totalRevenue = settings.students * settings.pricePerStudent;
   
+  // Tax calculation
+  const taxAmount = (totalRevenue * settings.taxPercent) / 100;
+  const revenueAfterTax = totalRevenue - taxAmount;
+  
   // Profit
-  const profit = totalRevenue - totalCost;
+  const profit = revenueAfterTax - totalCost;
   const marginPercent = totalRevenue > 0 ? (profit / totalRevenue) * 100 : 0;
   
   // Cost per student (includes mentor costs share!)
@@ -387,7 +393,7 @@ function App() {
               Настройки
             </h2>
             
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   Количество студентов
@@ -424,6 +430,21 @@ function App() {
                   className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                 />
               </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2 flex items-center gap-1">
+                  <Percent className="w-4 h-4" />
+                  Налог (%)
+                </label>
+                <input
+                  type="number"
+                  step="0.1"
+                  value={settings.taxPercent}
+                  onChange={(e) => setSettings({ ...settings, taxPercent: parseFloat(e.target.value) || 0 })}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                />
+                <p className="text-xs text-gray-500 mt-1">Вычитается из выручки</p>
+              </div>
             </div>
           </div>
         )}
@@ -459,6 +480,25 @@ function App() {
               <div className="text-lg font-bold text-green-600">{formatCurrency(totalRevenue).hkd} HKD</div>
               <div className="text-xs text-gray-600">≈ {formatCurrency(totalRevenue).kzt} ₸</div>
             </div>
+
+            {settings.taxPercent > 0 && (
+              <div className="bg-white rounded-lg p-4 shadow-sm border-2 border-red-200">
+                <div className="text-xs text-gray-500 uppercase mb-1 flex items-center gap-1">
+                  <Percent className="w-3 h-3" />
+                  Налог ({settings.taxPercent}%)
+                </div>
+                <div className="text-lg font-bold text-red-600">-{formatCurrency(taxAmount).hkd} HKD</div>
+                <div className="text-xs text-gray-600">≈ -{formatCurrency(taxAmount).kzt} ₸</div>
+              </div>
+            )}
+
+            {settings.taxPercent > 0 && (
+              <div className="bg-white rounded-lg p-4 shadow-sm border-2 border-blue-200">
+                <div className="text-xs text-gray-500 uppercase mb-1">Банк после налога</div>
+                <div className="text-lg font-bold text-blue-600">{formatCurrency(revenueAfterTax).hkd} HKD</div>
+                <div className="text-xs text-gray-600">≈ {formatCurrency(revenueAfterTax).kzt} ₸</div>
+              </div>
+            )}
 
             <div className="bg-white rounded-lg p-4 shadow-sm">
               <div className="text-xs text-gray-500 uppercase mb-1">Маржа на студента</div>
@@ -1196,6 +1236,41 @@ function App() {
                     {settings.students} × {formatCurrency(settings.pricePerStudent).hkd} HKD
                   </div>
                 </div>
+
+                {settings.taxPercent > 0 && (
+                  <>
+                    <div className="pt-3 border-t bg-red-50 -mx-6 px-6 py-3">
+                      <div className="flex justify-between items-center mb-2">
+                        <span className="font-semibold text-gray-900 flex items-center gap-1">
+                          <Percent className="w-4 h-4" />
+                          Налог ({settings.taxPercent}%):
+                        </span>
+                        <div className="text-right">
+                          <div className="font-bold text-lg text-red-600">
+                            -{formatCurrency(taxAmount).hkd} HKD
+                          </div>
+                          <div className="text-xs text-gray-500">
+                            ≈ -{formatCurrency(taxAmount).kzt} ₸
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="pt-3 border-t">
+                      <div className="flex justify-between items-center mb-2">
+                        <span className="font-semibold text-gray-900">Доход после налога:</span>
+                        <div className="text-right">
+                          <div className="font-bold text-lg text-blue-600">
+                            {formatCurrency(revenueAfterTax).hkd} HKD
+                          </div>
+                          <div className="text-xs text-gray-500">
+                            ≈ {formatCurrency(revenueAfterTax).kzt} ₸
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </>
+                )}
                 
                 <div className="pt-3 border-t bg-gradient-to-r from-blue-50 to-purple-50 -mx-6 -mb-6 px-6 py-4 rounded-b-xl">
                   <div className="flex justify-between items-center mb-2">
