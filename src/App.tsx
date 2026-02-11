@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react';
-import { Calculator, Users, Hotel, Utensils, Sparkles, DollarSign, TrendingUp, Settings as SettingsIcon, MapPin } from 'lucide-react';
+import { useState } from 'react';
+import { Calculator, Users, Hotel, Utensils, Sparkles, DollarSign, TrendingUp, Settings as SettingsIcon, MapPin, Plane, Plus, Edit2, Trash2, Camera } from 'lucide-react';
 
 interface Settings {
   students: number;
@@ -8,6 +8,7 @@ interface Settings {
 }
 
 interface Hotel {
+  id: string;
   name: string;
   pricePerPerson: number;
   pricePerPair: number;
@@ -26,6 +27,16 @@ interface Activity {
   url?: string;
 }
 
+interface Flight {
+  id: string;
+  name: string;
+  route: string;
+  date: string;
+  time: string;
+  price: number;
+  notes: string;
+}
+
 interface Transport {
   mtr: number;
   ferry: number;
@@ -35,7 +46,6 @@ interface Meals {
   breakfast: number;
   lunch: number;
   dinner: number;
-  perDay: number;
 }
 
 const DATES = {
@@ -45,7 +55,7 @@ const DATES = {
   totalDays: 9
 };
 
-const HKD_TO_KZT = 64.55; // Exchange rate from table
+const HKD_TO_KZT = 64.55;
 
 const formatCurrency = (hkd: number) => {
   const kzt = hkd * HKD_TO_KZT;
@@ -55,8 +65,9 @@ const formatCurrency = (hkd: number) => {
   };
 };
 
-const HOTELS: Hotel[] = [
+const INITIAL_HOTELS: Hotel[] = [
   {
+    id: 'beacon',
     name: 'The BEACON',
     pricePerPerson: 3876,
     pricePerPair: 7752,
@@ -66,6 +77,7 @@ const HOTELS: Hotel[] = [
     notes: 'Without Breakfast'
   },
   {
+    id: 'dorsett',
     name: 'Dorsett Mongkok',
     pricePerPerson: 4451.5,
     pricePerPair: 8903,
@@ -76,7 +88,7 @@ const HOTELS: Hotel[] = [
   }
 ];
 
-const ACTIVITIES: Activity[] = [
+const INITIAL_ACTIVITIES: Activity[] = [
   {
     id: 'victoria-peak',
     name: 'Victoria Peak (Peak Tram + Sky Terrace)',
@@ -134,8 +146,7 @@ const TRANSPORT: Transport = {
 const MEALS_BASE: Meals = {
   breakfast: 1000,
   lunch: 1000,
-  dinner: 1000,
-  perDay: 300
+  dinner: 1000
 };
 
 function App() {
@@ -145,32 +156,47 @@ function App() {
     pricePerStudent: 0
   });
 
-  const [selectedHotel, setSelectedHotel] = useState<Hotel>(HOTELS[1]); // Dorsett as default
-  const [activities, setActivities] = useState<Activity[]>(ACTIVITIES);
-  
+  const [hotels, setHotels] = useState<Hotel[]>(INITIAL_HOTELS);
+  const [selectedHotelId, setSelectedHotelId] = useState<string>('dorsett');
+  const [editingHotel, setEditingHotel] = useState<Hotel | null>(null);
+
+  const [activities, setActivities] = useState<Activity[]>(INITIAL_ACTIVITIES);
+  const [editingActivity, setEditingActivity] = useState<Activity | null>(null);
+
+  const [flights, setFlights] = useState<Flight[]>([
+    {
+      id: 'outbound',
+      name: 'Астана → Гонконг',
+      route: 'TSE → HKG',
+      date: '2026-03-20',
+      time: '10:00',
+      price: 0,
+      notes: 'Только для менторов'
+    },
+    {
+      id: 'return',
+      name: 'Гонконг → Астана',
+      route: 'HKG → TSE',
+      date: '2026-03-29',
+      time: '18:00',
+      price: 0,
+      notes: 'Только для менторов'
+    }
+  ]);
+  const [editingFlight, setEditingFlight] = useState<Flight | null>(null);
+
   const [mealOption, setMealOption] = useState<'none' | 'breakfast' | 'lunch-dinner' | 'all'>('none');
-  const [customMealPrice, setCustomMealPrice] = useState({
-    breakfast: MEALS_BASE.breakfast,
-    lunch: MEALS_BASE.lunch,
-    dinner: MEALS_BASE.dinner
-  });
+  const [customMealPrice, setCustomMealPrice] = useState<Meals>(MEALS_BASE);
 
   const [includeTransport, setIncludeTransport] = useState(true);
   const [showSettings, setShowSettings] = useState(false);
-  const [showDetails, setShowDetails] = useState(false);
 
-  const [aiPrompt, setAiPrompt] = useState('');
-  const [aiResponse, setAiResponse] = useState('');
+  const selectedHotel = hotels.find(h => h.id === selectedHotelId) || hotels[0];
 
   // Calculate hotel costs
   const calculateHotelCost = () => {
-    const totalPeople = settings.students + settings.mentors;
-    
-    // Students in pairs
     const studentPairs = Math.floor(settings.students / 2);
     const studentSingles = settings.students % 2;
-    
-    // Mentors solo
     const mentorSingles = settings.mentors;
     
     const pairsCost = studentPairs * selectedHotel.pricePerPair;
@@ -179,8 +205,7 @@ function App() {
     return {
       total: pairsCost + singlesCost,
       pairs: studentPairs,
-      singles: studentSingles + mentorSingles,
-      perPerson: selectedHotel.pricePerPerson
+      singles: studentSingles + mentorSingles
     };
   };
 
@@ -191,12 +216,10 @@ function App() {
     return (TRANSPORT.mtr + TRANSPORT.ferry) * totalPeople;
   };
 
-  // Calculate meal costs
+  // Calculate meal costs (full coverage for mentors!)
   const calculateMealCost = () => {
-    const totalPeople = settings.students + settings.mentors;
-    
-    // If hotel includes breakfast, don't charge for it
     const breakfastIncluded = selectedHotel.includesBreakfast;
+    const totalPeople = settings.students + settings.mentors;
     
     switch (mealOption) {
       case 'all':
@@ -214,7 +237,7 @@ function App() {
     }
   };
 
-  // Calculate activities cost
+  // Calculate activities cost (mentors included!)
   const calculateActivitiesCost = () => {
     const totalPeople = settings.students + settings.mentors;
     return activities
@@ -222,12 +245,27 @@ function App() {
       .reduce((sum, activity) => sum + (activity.pricePerPerson * totalPeople), 0);
   };
 
+  // Calculate flights cost (only mentors!)
+  const calculateFlightsCost = () => {
+    return flights.reduce((sum, flight) => sum + (flight.price * settings.mentors), 0);
+  };
+
   const hotelCost = calculateHotelCost();
   const transportCost = calculateTransportCost();
   const mealCost = calculateMealCost();
   const activitiesCost = calculateActivitiesCost();
+  const flightsCost = calculateFlightsCost();
   
-  const totalCost = hotelCost.total + transportCost + mealCost + activitiesCost;
+  const totalCost = hotelCost.total + transportCost + mealCost + activitiesCost + flightsCost;
+  
+  // Mentor costs breakdown
+  const mentorHotelCost = settings.mentors * selectedHotel.pricePerPerson;
+  const mentorTransportCost = includeTransport ? settings.mentors * (TRANSPORT.mtr + TRANSPORT.ferry) : 0;
+  const mentorMealCost = mealCost > 0 ? (mealCost / (settings.students + settings.mentors)) * settings.mentors : 0;
+  const mentorActivitiesCost = activitiesCost > 0 ? (activitiesCost / (settings.students + settings.mentors)) * settings.mentors : 0;
+  const mentorFlightsCost = flightsCost;
+  
+  const totalMentorCost = mentorHotelCost + mentorTransportCost + mentorMealCost + mentorActivitiesCost + mentorFlightsCost;
   
   // Revenue (only students pay)
   const totalRevenue = settings.students * settings.pricePerStudent;
@@ -236,9 +274,9 @@ function App() {
   const profit = totalRevenue - totalCost;
   const marginPercent = totalRevenue > 0 ? (profit / totalRevenue) * 100 : 0;
   
-  // Cost per person
+  // Cost per student (includes mentor costs share!)
   const costPerStudent = settings.students > 0 ? totalCost / settings.students : 0;
-  const costPerMentor = totalCost / (settings.students + settings.mentors);
+  const marginPerStudent = settings.students > 0 ? profit / settings.students : 0;
 
   const toggleActivity = (id: string) => {
     setActivities(activities.map(a => 
@@ -246,42 +284,77 @@ function App() {
     ));
   };
 
-  const handleAiAssist = async () => {
-    if (!aiPrompt.trim()) return;
-    
-    setAiResponse('🤖 Анализирую твой запрос...');
-    
-    setTimeout(() => {
-      const suggestions = [];
-      
-      if (aiPrompt.toLowerCase().includes('цена') || aiPrompt.toLowerCase().includes('стоимость')) {
-        const breakEvenPrice = Math.ceil(totalCost / settings.students);
-        const recommended = Math.ceil(breakEvenPrice * 1.1);
-        suggestions.push(`💰 Минимальная цена (без прибыли): ${breakEvenPrice.toLocaleString()} HKD`);
-        suggestions.push(`✅ Рекомендуемая цена (+10% маржа): ${recommended.toLocaleString()} HKD`);
-      }
-      
-      if (aiPrompt.toLowerCase().includes('диснейленд')) {
-        const withoutDisney = totalCost - (752 * (settings.students + settings.mentors));
-        suggestions.push(`🏰 Без Диснейленда: ${withoutDisney.toLocaleString()} HKD`);
-        suggestions.push(`💾 Экономия: ${(totalCost - withoutDisney).toLocaleString()} HKD`);
-      }
-      
-      if (aiPrompt.toLowerCase().includes('отель') || aiPrompt.toLowerCase().includes('hotel')) {
-        suggestions.push(`🏨 Текущий отель: ${selectedHotel.name}`);
-        suggestions.push(`💵 ${selectedHotel.pricePerPerson.toLocaleString()} HKD за человека`);
-        if (selectedHotel.includesBreakfast) suggestions.push(`✓ Завтрак включен`);
-        if (selectedHotel.includesTransfer) suggestions.push(`✓ Трансфер включен`);
-      }
-      
-      suggestions.push(`\n📊 Текущие показатели:`);
-      suggestions.push(`• Себестоимость: ${totalCost.toLocaleString()} HKD`);
-      suggestions.push(`• На студента: ${costPerStudent.toFixed(0)} HKD`);
-      suggestions.push(`• Прибыль: ${profit >= 0 ? '+' : ''}${profit.toLocaleString()} HKD`);
-      suggestions.push(`• Маржа: ${marginPercent.toFixed(1)}%`);
-      
-      setAiResponse(suggestions.join('\n'));
-    }, 800);
+  const addHotel = () => {
+    const newHotel: Hotel = {
+      id: `hotel-${Date.now()}`,
+      name: 'Новый отель',
+      pricePerPerson: 0,
+      pricePerPair: 0,
+      includesBreakfast: false,
+      includesTransfer: false,
+      url: '',
+      notes: ''
+    };
+    setHotels([...hotels, newHotel]);
+    setEditingHotel(newHotel);
+  };
+
+  const updateHotel = (hotel: Hotel) => {
+    setHotels(hotels.map(h => h.id === hotel.id ? hotel : h));
+    setEditingHotel(null);
+  };
+
+  const deleteHotel = (id: string) => {
+    if (hotels.length <= 1) return;
+    setHotels(hotels.filter(h => h.id !== id));
+    if (selectedHotelId === id) {
+      setSelectedHotelId(hotels[0].id);
+    }
+  };
+
+  const addActivity = () => {
+    const newActivity: Activity = {
+      id: `activity-${Date.now()}`,
+      name: 'Новая активность',
+      pricePerPerson: 0,
+      enabled: true,
+      notes: '',
+      url: ''
+    };
+    setActivities([...activities, newActivity]);
+    setEditingActivity(newActivity);
+  };
+
+  const updateActivity = (activity: Activity) => {
+    setActivities(activities.map(a => a.id === activity.id ? activity : a));
+    setEditingActivity(null);
+  };
+
+  const deleteActivity = (id: string) => {
+    setActivities(activities.filter(a => a.id !== id));
+  };
+
+  const addFlight = () => {
+    const newFlight: Flight = {
+      id: `flight-${Date.now()}`,
+      name: 'Новый рейс',
+      route: '',
+      date: DATES.start,
+      time: '10:00',
+      price: 0,
+      notes: ''
+    };
+    setFlights([...flights, newFlight]);
+    setEditingFlight(newFlight);
+  };
+
+  const updateFlight = (flight: Flight) => {
+    setFlights(flights.map(f => f.id === flight.id ? flight : f));
+    setEditingFlight(null);
+  };
+
+  const deleteFlight = (id: string) => {
+    setFlights(flights.filter(f => f.id !== id));
   };
 
   return (
@@ -355,52 +428,340 @@ function App() {
           </div>
         )}
 
+        {/* Summary Card (NEW!) */}
+        <div className="bg-gradient-to-br from-blue-50 to-purple-50 rounded-xl shadow-lg p-6 mb-6 border-2 border-blue-200">
+          <div className="flex items-center gap-3 mb-4">
+            <Camera className="w-6 h-6 text-blue-600" />
+            <h2 className="text-2xl font-bold text-gray-900">Итоги конфигурации</h2>
+          </div>
+          
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="bg-white rounded-lg p-4 shadow-sm">
+              <div className="text-xs text-gray-500 uppercase mb-1">Даты</div>
+              <div className="text-lg font-bold text-gray-900">{DATES.totalDays} дней</div>
+              <div className="text-xs text-gray-600">{DATES.start} → {DATES.end}</div>
+            </div>
+
+            <div className="bg-white rounded-lg p-4 shadow-sm">
+              <div className="text-xs text-gray-500 uppercase mb-1">Группа</div>
+              <div className="text-lg font-bold text-gray-900">{settings.students + settings.mentors} чел</div>
+              <div className="text-xs text-gray-600">{settings.students} студ + {settings.mentors} мент</div>
+            </div>
+
+            <div className="bg-white rounded-lg p-4 shadow-sm">
+              <div className="text-xs text-gray-500 uppercase mb-1">Себестоимость / студента</div>
+              <div className="text-lg font-bold text-blue-600">{formatCurrency(costPerStudent).hkd} HKD</div>
+              <div className="text-xs text-gray-600">≈ {formatCurrency(costPerStudent).kzt} ₸</div>
+            </div>
+
+            <div className="bg-white rounded-lg p-4 shadow-sm">
+              <div className="text-xs text-gray-500 uppercase mb-1">Общий банк (от студентов)</div>
+              <div className="text-lg font-bold text-green-600">{formatCurrency(totalRevenue).hkd} HKD</div>
+              <div className="text-xs text-gray-600">≈ {formatCurrency(totalRevenue).kzt} ₸</div>
+            </div>
+
+            <div className="bg-white rounded-lg p-4 shadow-sm">
+              <div className="text-xs text-gray-500 uppercase mb-1">Маржа на студента</div>
+              <div className={`text-lg font-bold ${marginPerStudent >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                {marginPerStudent >= 0 ? '+' : ''}{formatCurrency(marginPerStudent).hkd} HKD
+              </div>
+              <div className="text-xs text-gray-600">≈ {formatCurrency(marginPerStudent).kzt} ₸</div>
+            </div>
+
+            <div className="bg-white rounded-lg p-4 shadow-sm">
+              <div className="text-xs text-gray-500 uppercase mb-1">Маржа на группу</div>
+              <div className={`text-lg font-bold ${profit >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                {profit >= 0 ? '+' : ''}{formatCurrency(profit).hkd} HKD
+              </div>
+              <div className="text-xs text-gray-600">≈ {formatCurrency(profit).kzt} ₸</div>
+            </div>
+
+            <div className="bg-white rounded-lg p-4 shadow-sm">
+              <div className="text-xs text-gray-500 uppercase mb-1">Маржинальность</div>
+              <div className={`text-lg font-bold ${marginPercent >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                {marginPercent.toFixed(1)}%
+              </div>
+              <div className="text-xs text-gray-600">{profit >= 0 ? 'Прибыль' : 'Убыток'}</div>
+            </div>
+
+            <div className="bg-white rounded-lg p-4 shadow-sm">
+              <div className="text-xs text-gray-500 uppercase mb-1">Расходы на менторов</div>
+              <div className="text-lg font-bold text-orange-600">{formatCurrency(totalMentorCost).hkd} HKD</div>
+              <div className="text-xs text-gray-600">≈ {formatCurrency(totalMentorCost).kzt} ₸</div>
+            </div>
+          </div>
+        </div>
+
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* Left Column: Options */}
           <div className="lg:col-span-2 space-y-6">
-            {/* Hotel Selection */}
+            {/* Flights */}
             <div className="bg-white rounded-xl shadow-sm p-6">
-              <h2 className="text-xl font-bold mb-4 flex items-center gap-2">
-                <Hotel className="w-5 h-5" />
-                Отель
-              </h2>
+              <div className="flex justify-between items-center mb-4">
+                <h2 className="text-xl font-bold flex items-center gap-2">
+                  <Plane className="w-5 h-5" />
+                  Перелеты (только менторы)
+                </h2>
+                <button
+                  onClick={addFlight}
+                  className="px-3 py-1 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition text-sm flex items-center gap-1"
+                >
+                  <Plus className="w-4 h-4" />
+                  Добавить
+                </button>
+              </div>
               
               <div className="space-y-3">
-                {HOTELS.map((hotel, idx) => (
-                  <div
-                    key={idx}
-                    onClick={() => setSelectedHotel(hotel)}
-                    className={`p-4 border-2 rounded-lg cursor-pointer transition ${
-                      selectedHotel.name === hotel.name
-                        ? 'border-blue-500 bg-blue-50'
-                        : 'border-gray-200 hover:border-gray-300'
-                    }`}
-                  >
-                    <div className="flex justify-between items-start mb-2">
-                      <div>
-                        <h3 className="font-semibold text-gray-900">{hotel.name}</h3>
-                        <p className="text-xs text-gray-500 mt-1">{hotel.notes}</p>
+                {flights.map((flight) => (
+                  <div key={flight.id} className="p-4 border-2 border-gray-200 rounded-lg">
+                    {editingFlight?.id === flight.id ? (
+                      <div className="space-y-3">
+                        <input
+                          type="text"
+                          value={editingFlight.name}
+                          onChange={(e) => setEditingFlight({ ...editingFlight, name: e.target.value })}
+                          placeholder="Название"
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                        />
+                        <div className="grid grid-cols-2 gap-2">
+                          <input
+                            type="text"
+                            value={editingFlight.route}
+                            onChange={(e) => setEditingFlight({ ...editingFlight, route: e.target.value })}
+                            placeholder="Маршрут (TSE → HKG)"
+                            className="px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                          />
+                          <input
+                            type="date"
+                            value={editingFlight.date}
+                            onChange={(e) => setEditingFlight({ ...editingFlight, date: e.target.value })}
+                            className="px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                          />
+                          <input
+                            type="time"
+                            value={editingFlight.time}
+                            onChange={(e) => setEditingFlight({ ...editingFlight, time: e.target.value })}
+                            className="px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                          />
+                          <input
+                            type="number"
+                            value={editingFlight.price}
+                            onChange={(e) => setEditingFlight({ ...editingFlight, price: parseInt(e.target.value) || 0 })}
+                            placeholder="Цена (HKD)"
+                            className="px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                          />
+                        </div>
+                        <input
+                          type="text"
+                          value={editingFlight.notes}
+                          onChange={(e) => setEditingFlight({ ...editingFlight, notes: e.target.value })}
+                          placeholder="Примечания"
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                        />
+                        <div className="flex gap-2">
+                          <button
+                            onClick={() => updateFlight(editingFlight)}
+                            className="px-3 py-1 bg-green-500 text-white rounded text-sm hover:bg-green-600"
+                          >
+                            Сохранить
+                          </button>
+                          <button
+                            onClick={() => setEditingFlight(null)}
+                            className="px-3 py-1 bg-gray-300 text-gray-700 rounded text-sm hover:bg-gray-400"
+                          >
+                            Отмена
+                          </button>
+                        </div>
                       </div>
-                      <div className="text-right">
-                        <div className="text-sm font-medium text-gray-900">{hotel.pricePerPair.toLocaleString()} HKD</div>
-                        <div className="text-xs text-gray-500">per pair</div>
-                        <div className="text-xs text-gray-500 mt-1">{hotel.pricePerPerson.toLocaleString()} HKD solo</div>
+                    ) : (
+                      <div className="flex justify-between items-start">
+                        <div className="flex-1">
+                          <h3 className="font-semibold text-gray-900">{flight.name}</h3>
+                          <div className="text-sm text-gray-600 mt-1">
+                            {flight.route} • {flight.date} {flight.time}
+                          </div>
+                          {flight.notes && (
+                            <div className="text-xs text-gray-500 mt-1">{flight.notes}</div>
+                          )}
+                          {flight.price > 0 && (
+                            <div className="text-xs text-blue-600 mt-1 font-medium">
+                              {formatCurrency(flight.price * settings.mentors).hkd} HKD ({settings.mentors} × {formatCurrency(flight.price).hkd})
+                            </div>
+                          )}
+                        </div>
+                        <div className="flex gap-1">
+                          <button
+                            onClick={() => setEditingFlight(flight)}
+                            className="p-1 hover:bg-gray-100 rounded"
+                          >
+                            <Edit2 className="w-4 h-4 text-gray-600" />
+                          </button>
+                          <button
+                            onClick={() => deleteFlight(flight.id)}
+                            className="p-1 hover:bg-red-100 rounded"
+                          >
+                            <Trash2 className="w-4 h-4 text-red-600" />
+                          </button>
+                        </div>
                       </div>
-                    </div>
-                    <div className="flex gap-2 text-xs text-green-600">
-                      {hotel.includesBreakfast && <span>✓ Завтрак</span>}
-                      {hotel.includesTransfer && <span>✓ Трансфер</span>}
-                    </div>
-                    {hotel.url && (
-                      <a 
-                        href={hotel.url} 
-                        target="_blank" 
-                        rel="noopener noreferrer"
-                        className="text-xs text-blue-500 hover:underline mt-2 block"
-                        onClick={(e) => e.stopPropagation()}
+                    )}
+                  </div>
+                ))}
+              </div>
+
+              {flightsCost > 0 && (
+                <div className="mt-4 p-3 bg-gray-50 rounded-lg text-sm">
+                  <div className="font-semibold text-gray-900">
+                    Итого перелеты: {formatCurrency(flightsCost).hkd} HKD
+                  </div>
+                  <div className="text-xs text-gray-500 mt-1">
+                    ≈ {formatCurrency(flightsCost).kzt} ₸
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Hotel Selection */}
+            <div className="bg-white rounded-xl shadow-sm p-6">
+              <div className="flex justify-between items-center mb-4">
+                <h2 className="text-xl font-bold flex items-center gap-2">
+                  <Hotel className="w-5 h-5" />
+                  Отель
+                </h2>
+                <button
+                  onClick={addHotel}
+                  className="px-3 py-1 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition text-sm flex items-center gap-1"
+                >
+                  <Plus className="w-4 h-4" />
+                  Добавить
+                </button>
+              </div>
+              
+              <div className="space-y-3">
+                {hotels.map((hotel) => (
+                  <div key={hotel.id}>
+                    {editingHotel?.id === hotel.id ? (
+                      <div className="p-4 border-2 border-blue-500 rounded-lg space-y-3">
+                        <input
+                          type="text"
+                          value={editingHotel.name}
+                          onChange={(e) => setEditingHotel({ ...editingHotel, name: e.target.value })}
+                          placeholder="Название отеля"
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                        />
+                        <div className="grid grid-cols-2 gap-3">
+                          <input
+                            type="number"
+                            value={editingHotel.pricePerPair}
+                            onChange={(e) => setEditingHotel({ ...editingHotel, pricePerPair: parseInt(e.target.value) || 0 })}
+                            placeholder="Цена за пару (HKD)"
+                            className="px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                          />
+                          <input
+                            type="number"
+                            value={editingHotel.pricePerPerson}
+                            onChange={(e) => setEditingHotel({ ...editingHotel, pricePerPerson: parseInt(e.target.value) || 0 })}
+                            placeholder="Цена соло (HKD)"
+                            className="px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                          />
+                        </div>
+                        <input
+                          type="text"
+                          value={editingHotel.url}
+                          onChange={(e) => setEditingHotel({ ...editingHotel, url: e.target.value })}
+                          placeholder="URL"
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                        />
+                        <input
+                          type="text"
+                          value={editingHotel.notes}
+                          onChange={(e) => setEditingHotel({ ...editingHotel, notes: e.target.value })}
+                          placeholder="Примечания"
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                        />
+                        <div className="flex gap-3">
+                          <label className="flex items-center gap-2 text-sm">
+                            <input
+                              type="checkbox"
+                              checked={editingHotel.includesBreakfast}
+                              onChange={(e) => setEditingHotel({ ...editingHotel, includesBreakfast: e.target.checked })}
+                            />
+                            Завтрак включен
+                          </label>
+                          <label className="flex items-center gap-2 text-sm">
+                            <input
+                              type="checkbox"
+                              checked={editingHotel.includesTransfer}
+                              onChange={(e) => setEditingHotel({ ...editingHotel, includesTransfer: e.target.checked })}
+                            />
+                            Трансфер включен
+                          </label>
+                        </div>
+                        <div className="flex gap-2">
+                          <button
+                            onClick={() => updateHotel(editingHotel)}
+                            className="px-3 py-1 bg-green-500 text-white rounded text-sm hover:bg-green-600"
+                          >
+                            Сохранить
+                          </button>
+                          <button
+                            onClick={() => setEditingHotel(null)}
+                            className="px-3 py-1 bg-gray-300 text-gray-700 rounded text-sm hover:bg-gray-400"
+                          >
+                            Отмена
+                          </button>
+                          {hotels.length > 1 && (
+                            <button
+                              onClick={() => { deleteHotel(hotel.id); setEditingHotel(null); }}
+                              className="px-3 py-1 bg-red-500 text-white rounded text-sm hover:bg-red-600 ml-auto"
+                            >
+                              Удалить
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    ) : (
+                      <div
+                        onClick={() => setSelectedHotelId(hotel.id)}
+                        className={`p-4 border-2 rounded-lg cursor-pointer transition relative ${
+                          selectedHotelId === hotel.id
+                            ? 'border-blue-500 bg-blue-50'
+                            : 'border-gray-200 hover:border-gray-300'
+                        }`}
                       >
-                        🔗 Открыть сайт
-                      </a>
+                        <button
+                          onClick={(e) => { e.stopPropagation(); setEditingHotel(hotel); }}
+                          className="absolute top-2 right-2 p-1 hover:bg-gray-100 rounded"
+                        >
+                          <Edit2 className="w-4 h-4 text-gray-600" />
+                        </button>
+                        <div className="flex justify-between items-start mb-2 pr-8">
+                          <div>
+                            <h3 className="font-semibold text-gray-900">{hotel.name}</h3>
+                            <p className="text-xs text-gray-500 mt-1">{hotel.notes}</p>
+                          </div>
+                          <div className="text-right">
+                            <div className="text-sm font-medium text-gray-900">{hotel.pricePerPair.toLocaleString()} HKD</div>
+                            <div className="text-xs text-gray-500">per pair</div>
+                            <div className="text-xs text-gray-500 mt-1">{hotel.pricePerPerson.toLocaleString()} HKD solo</div>
+                          </div>
+                        </div>
+                        <div className="flex gap-2 text-xs text-green-600">
+                          {hotel.includesBreakfast && <span>✓ Завтрак</span>}
+                          {hotel.includesTransfer && <span>✓ Трансфер</span>}
+                        </div>
+                        {hotel.url && (
+                          <a 
+                            href={hotel.url} 
+                            target="_blank" 
+                            rel="noopener noreferrer"
+                            className="text-xs text-blue-500 hover:underline mt-2 block"
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            🔗 Открыть сайт
+                          </a>
+                        )}
+                      </div>
                     )}
                   </div>
                 ))}
@@ -452,7 +813,7 @@ function App() {
             <div className="bg-white rounded-xl shadow-sm p-6">
               <h2 className="text-xl font-bold mb-4 flex items-center gap-2">
                 <Utensils className="w-5 h-5" />
-                Питание
+                Питание (менторам тоже покрывается!)
               </h2>
               
               {selectedHotel.includesBreakfast && (
@@ -589,52 +950,123 @@ function App() {
 
             {/* Activities */}
             <div className="bg-white rounded-xl shadow-sm p-6">
-              <h2 className="text-xl font-bold mb-4 flex items-center gap-2">
-                <Sparkles className="w-5 h-5" />
-                Активности
-              </h2>
+              <div className="flex justify-between items-center mb-4">
+                <h2 className="text-xl font-bold flex items-center gap-2">
+                  <Sparkles className="w-5 h-5" />
+                  Активности (менторам тоже!)
+                </h2>
+                <button
+                  onClick={addActivity}
+                  className="px-3 py-1 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition text-sm flex items-center gap-1"
+                >
+                  <Plus className="w-4 h-4" />
+                  Добавить
+                </button>
+              </div>
               
               <div className="space-y-3">
                 {activities.map((activity) => (
-                  <div
-                    key={activity.id}
-                    className={`p-4 border-2 rounded-lg transition ${
-                      activity.enabled ? 'border-blue-500 bg-blue-50' : 'border-gray-200'
-                    }`}
-                  >
-                    <div className="flex items-start gap-3">
-                      <input
-                        type="checkbox"
-                        checked={activity.enabled}
-                        onChange={() => toggleActivity(activity.id)}
-                        className="mt-1 w-5 h-5"
-                      />
-                      <div className="flex-1">
-                        <h3 className="font-semibold text-gray-900">{activity.name}</h3>
-                        <p className="text-xs text-gray-500 mt-1">{activity.notes}</p>
-                        {activity.url && (
-                          <a 
-                            href={activity.url} 
-                            target="_blank" 
-                            rel="noopener noreferrer"
-                            className="text-xs text-blue-500 hover:underline mt-1 inline-block"
+                  <div key={activity.id}>
+                    {editingActivity?.id === activity.id ? (
+                      <div className="p-4 border-2 border-blue-500 rounded-lg space-y-3">
+                        <input
+                          type="text"
+                          value={editingActivity.name}
+                          onChange={(e) => setEditingActivity({ ...editingActivity, name: e.target.value })}
+                          placeholder="Название"
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                        />
+                        <input
+                          type="number"
+                          value={editingActivity.pricePerPerson}
+                          onChange={(e) => setEditingActivity({ ...editingActivity, pricePerPerson: parseInt(e.target.value) || 0 })}
+                          placeholder="Цена на человека (HKD)"
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                        />
+                        <input
+                          type="text"
+                          value={editingActivity.notes}
+                          onChange={(e) => setEditingActivity({ ...editingActivity, notes: e.target.value })}
+                          placeholder="Примечания"
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                        />
+                        <input
+                          type="text"
+                          value={editingActivity.url || ''}
+                          onChange={(e) => setEditingActivity({ ...editingActivity, url: e.target.value })}
+                          placeholder="URL (опционально)"
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                        />
+                        <div className="flex gap-2">
+                          <button
+                            onClick={() => updateActivity(editingActivity)}
+                            className="px-3 py-1 bg-green-500 text-white rounded text-sm hover:bg-green-600"
                           >
-                            🔗 Подробнее
-                          </a>
-                        )}
-                      </div>
-                      <div className="text-right">
-                        <div className="text-sm font-medium text-gray-900">
-                          {activity.pricePerPerson.toLocaleString()} HKD
+                            Сохранить
+                          </button>
+                          <button
+                            onClick={() => setEditingActivity(null)}
+                            className="px-3 py-1 bg-gray-300 text-gray-700 rounded text-sm hover:bg-gray-400"
+                          >
+                            Отмена
+                          </button>
+                          <button
+                            onClick={() => { deleteActivity(activity.id); setEditingActivity(null); }}
+                            className="px-3 py-1 bg-red-500 text-white rounded text-sm hover:bg-red-600 ml-auto"
+                          >
+                            Удалить
+                          </button>
                         </div>
-                        <div className="text-xs text-gray-500">per person</div>
-                        {activity.enabled && (
-                          <div className="text-xs text-blue-600 mt-1 font-medium">
-                            {(activity.pricePerPerson * (settings.students + settings.mentors)).toLocaleString()} HKD
-                          </div>
-                        )}
                       </div>
-                    </div>
+                    ) : (
+                      <div
+                        className={`p-4 border-2 rounded-lg transition relative ${
+                          activity.enabled ? 'border-blue-500 bg-blue-50' : 'border-gray-200'
+                        }`}
+                      >
+                        <div className="absolute top-2 right-2 flex gap-1">
+                          <button
+                            onClick={() => setEditingActivity(activity)}
+                            className="p-1 hover:bg-gray-100 rounded"
+                          >
+                            <Edit2 className="w-4 h-4 text-gray-600" />
+                          </button>
+                        </div>
+                        <div className="flex items-start gap-3 pr-16">
+                          <input
+                            type="checkbox"
+                            checked={activity.enabled}
+                            onChange={() => toggleActivity(activity.id)}
+                            className="mt-1 w-5 h-5"
+                          />
+                          <div className="flex-1">
+                            <h3 className="font-semibold text-gray-900">{activity.name}</h3>
+                            <p className="text-xs text-gray-500 mt-1">{activity.notes}</p>
+                            {activity.url && (
+                              <a 
+                                href={activity.url} 
+                                target="_blank" 
+                                rel="noopener noreferrer"
+                                className="text-xs text-blue-500 hover:underline mt-1 inline-block"
+                              >
+                                🔗 Подробнее
+                              </a>
+                            )}
+                          </div>
+                          <div className="text-right">
+                            <div className="text-sm font-medium text-gray-900">
+                              {activity.pricePerPerson.toLocaleString()} HKD
+                            </div>
+                            <div className="text-xs text-gray-500">per person</div>
+                            {activity.enabled && (
+                              <div className="text-xs text-blue-600 mt-1 font-medium">
+                                {(activity.pricePerPerson * (settings.students + settings.mentors)).toLocaleString()} HKD
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>
@@ -646,40 +1078,6 @@ function App() {
                 <div className="text-xs text-gray-500 mt-1">
                   ≈ {formatCurrency(activitiesCost).kzt} ₸
                 </div>
-              </div>
-            </div>
-
-            {/* AI Assistant */}
-            <div className="bg-gradient-to-r from-purple-50 to-blue-50 rounded-xl shadow-sm p-6">
-              <h2 className="text-xl font-bold mb-4 flex items-center gap-2">
-                <Sparkles className="w-5 h-5 text-purple-500" />
-                AI Помощник
-              </h2>
-              
-              <div className="space-y-3">
-                <textarea
-                  value={aiPrompt}
-                  onChange={(e) => setAiPrompt(e.target.value)}
-                  placeholder="Например: 'Какую цену поставить для прибыли 20,000 HKD?'"
-                  className="w-full px-4 py-3 border border-gray-300 rounded-lg resize-none focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
-                  rows={3}
-                />
-                
-                <button
-                  onClick={handleAiAssist}
-                  disabled={!aiPrompt.trim()}
-                  className="w-full px-4 py-3 bg-purple-500 text-white rounded-lg hover:bg-purple-600 transition disabled:bg-gray-300 disabled:cursor-not-allowed font-medium"
-                >
-                  Спросить AI
-                </button>
-                
-                {aiResponse && (
-                  <div className="p-4 bg-white rounded-lg border border-purple-200">
-                    <pre className="text-sm text-gray-700 whitespace-pre-wrap font-sans">
-                      {aiResponse}
-                    </pre>
-                  </div>
-                )}
               </div>
             </div>
           </div>
@@ -700,9 +1098,9 @@ function App() {
                   </span>
                 </div>
                 
-                <div className="pt-3 border-t space-y-2 text-sm">
+                <div className="pt-3 border-t space-y-2">
                   <div>
-                    <div className="flex justify-between">
+                    <div className="flex justify-between text-sm">
                       <span className="text-gray-600">Отель:</span>
                       <span className="font-medium">{formatCurrency(hotelCost.total).hkd} HKD</span>
                     </div>
@@ -710,7 +1108,7 @@ function App() {
                   </div>
                   {includeTransport && (
                     <div>
-                      <div className="flex justify-between">
+                      <div className="flex justify-between text-sm">
                         <span className="text-gray-600">Транспорт:</span>
                         <span className="font-medium">{formatCurrency(transportCost).hkd} HKD</span>
                       </div>
@@ -719,7 +1117,7 @@ function App() {
                   )}
                   {mealCost > 0 && (
                     <div>
-                      <div className="flex justify-between">
+                      <div className="flex justify-between text-sm">
                         <span className="text-gray-600">Питание:</span>
                         <span className="font-medium">{formatCurrency(mealCost).hkd} HKD</span>
                       </div>
@@ -727,11 +1125,41 @@ function App() {
                     </div>
                   )}
                   <div>
-                    <div className="flex justify-between">
+                    <div className="flex justify-between text-sm">
                       <span className="text-gray-600">Активности:</span>
                       <span className="font-medium">{formatCurrency(activitiesCost).hkd} HKD</span>
                     </div>
                     <div className="text-xs text-gray-500 text-right">≈ {formatCurrency(activitiesCost).kzt} ₸</div>
+                  </div>
+                  {flightsCost > 0 && (
+                    <div>
+                      <div className="flex justify-between text-sm">
+                        <span className="text-gray-600">Перелеты:</span>
+                        <span className="font-medium">{formatCurrency(flightsCost).hkd} HKD</span>
+                      </div>
+                      <div className="text-xs text-gray-500 text-right">≈ {formatCurrency(flightsCost).kzt} ₸</div>
+                    </div>
+                  )}
+                </div>
+
+                <div className="pt-3 border-t bg-orange-50 -mx-6 px-6 py-3">
+                  <div className="flex justify-between items-center mb-2">
+                    <span className="font-semibold text-gray-900">Расходы на менторов:</span>
+                    <div className="text-right">
+                      <div className="font-bold text-lg text-orange-600">
+                        {formatCurrency(totalMentorCost).hkd} HKD
+                      </div>
+                      <div className="text-xs text-gray-500">
+                        ≈ {formatCurrency(totalMentorCost).kzt} ₸
+                      </div>
+                    </div>
+                  </div>
+                  <div className="text-xs text-gray-600 space-y-1">
+                    <div>• Отель: {formatCurrency(mentorHotelCost).hkd} HKD</div>
+                    {mentorTransportCost > 0 && <div>• Транспорт: {formatCurrency(mentorTransportCost).hkd} HKD</div>}
+                    {mentorMealCost > 0 && <div>• Питание: {formatCurrency(mentorMealCost).hkd} HKD</div>}
+                    {mentorActivitiesCost > 0 && <div>• Активности: {formatCurrency(mentorActivitiesCost).hkd} HKD</div>}
+                    {mentorFlightsCost > 0 && <div>• Перелеты: {formatCurrency(mentorFlightsCost).hkd} HKD</div>}
                   </div>
                 </div>
                 
@@ -749,7 +1177,6 @@ function App() {
                   </div>
                   <div className="text-xs text-gray-500 space-y-1">
                     <div>{formatCurrency(costPerStudent).hkd} HKD / {formatCurrency(costPerStudent).kzt} ₸ на студента</div>
-                    <div>{formatCurrency(costPerMentor).hkd} HKD / {formatCurrency(costPerMentor).kzt} ₸ на человека (среднее)</div>
                   </div>
                 </div>
                 
