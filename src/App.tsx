@@ -76,6 +76,25 @@ const DATES = {
   totalDays: 9
 };
 
+// Convert HKD (stored) to display currency
+const toDisplayCurrency = (hkdAmount: number, settings: Settings): number => {
+  return settings.primaryCurrency === 'KZT' 
+    ? hkdAmount * settings.exchangeRate 
+    : hkdAmount;
+};
+
+// Convert display currency back to HKD (for storage)
+const toHKD = (displayAmount: number, settings: Settings): number => {
+  return settings.primaryCurrency === 'KZT' 
+    ? displayAmount / settings.exchangeRate 
+    : displayAmount;
+};
+
+// Get currency symbol
+const getCurrencySymbol = (currency: 'HKD' | 'KZT'): string => {
+  return currency === 'KZT' ? '₸' : 'HKD';
+};
+
 const formatCurrency = (amount: number, currency: 'HKD' | 'KZT', exchangeRate: number) => {
   if (currency === 'HKD') {
     return {
@@ -868,12 +887,17 @@ function App() {
               
               <div>
                 <label className="block text-xs font-medium text-gray-700 mb-1">
-                  Price per student ({settings.primaryCurrency})
+                  Price per student ({getCurrencySymbol(settings.primaryCurrency)})
                 </label>
                 <input
                   type="number"
-                  value={settings.pricePerStudent}
-                  onChange={(e) => setSettings({ ...settings, pricePerStudent: parseFloat(e.target.value) || 0 })}
+                  value={toDisplayCurrency(settings.pricePerStudent, settings)}
+                  onChange={(e) => {
+                    const displayValue = parseFloat(e.target.value) || 0;
+                    const hkdValue = toHKD(displayValue, settings);
+                    setSettings({ ...settings, pricePerStudent: hkdValue });
+                  }}
+                  placeholder={`Price (${getCurrencySymbol(settings.primaryCurrency)})`}
                   className="w-full px-3 py-1.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
                 />
                 <p className="text-xs text-gray-500 mt-1">
@@ -1124,9 +1148,13 @@ function App() {
                               />
                               <input
                                 type="number"
-                                value={editingFlight.price}
-                                onChange={(e) => setEditingFlight({ ...editingFlight, price: parseFloat(e.target.value) || 0 })}
-                                placeholder="Price (HKD)"
+                                value={toDisplayCurrency(editingFlight.price, settings)}
+                                onChange={(e) => {
+                                  const displayValue = parseFloat(e.target.value) || 0;
+                                  const hkdValue = toHKD(displayValue, settings);
+                                  setEditingFlight({ ...editingFlight, price: hkdValue });
+                                }}
+                                placeholder={`Price (${getCurrencySymbol(settings.primaryCurrency)})`}
                                 className="px-2 py-1 border border-gray-300 rounded text-sm"
                               />
                             </div>
@@ -1220,11 +1248,16 @@ function App() {
                         />
                       </div>
                       <div>
-                        <label className="block text-xs text-gray-600 mb-1">Cost/meal (HKD)</label>
+                        <label className="block text-xs text-gray-600 mb-1">Cost/meal ({getCurrencySymbol(settings.primaryCurrency)})</label>
                         <input
                           type="number"
-                          value={settings.mentorCostPerMeal}
-                          onChange={(e) => setSettings({ ...settings, mentorCostPerMeal: parseFloat(e.target.value) || 0 })}
+                          value={toDisplayCurrency(settings.mentorCostPerMeal, settings)}
+                          onChange={(e) => {
+                            const displayValue = parseFloat(e.target.value) || 0;
+                            const hkdValue = toHKD(displayValue, settings);
+                            setSettings({ ...settings, mentorCostPerMeal: hkdValue });
+                          }}
+                          placeholder={`Cost (${getCurrencySymbol(settings.primaryCurrency)})`}
                           className="w-full px-2 py-1 border border-gray-300 rounded text-sm"
                         />
                       </div>
@@ -1274,16 +1307,24 @@ function App() {
                             <div className="grid grid-cols-2 gap-2">
                               <input
                                 type="number"
-                                value={editingHotel.pricePerPair}
-                                onChange={(e) => setEditingHotel({ ...editingHotel, pricePerPair: parseFloat(e.target.value) || 0 })}
-                                placeholder="Price/pair (HKD)"
+                                value={toDisplayCurrency(editingHotel.pricePerPair, settings)}
+                                onChange={(e) => {
+                                  const displayValue = parseFloat(e.target.value) || 0;
+                                  const hkdValue = toHKD(displayValue, settings);
+                                  setEditingHotel({ ...editingHotel, pricePerPair: hkdValue });
+                                }}
+                                placeholder={`Price/pair (${getCurrencySymbol(settings.primaryCurrency)})`}
                                 className="px-2 py-1 border border-gray-300 rounded text-sm"
                               />
                               <input
                                 type="number"
-                                value={editingHotel.pricePerPerson}
-                                onChange={(e) => setEditingHotel({ ...editingHotel, pricePerPerson: parseFloat(e.target.value) || 0 })}
-                                placeholder="Price/solo (HKD)"
+                                value={toDisplayCurrency(editingHotel.pricePerPerson, settings)}
+                                onChange={(e) => {
+                                  const displayValue = parseFloat(e.target.value) || 0;
+                                  const hkdValue = toHKD(displayValue, settings);
+                                  setEditingHotel({ ...editingHotel, pricePerPerson: hkdValue });
+                                }}
+                                placeholder={`Price/solo (${getCurrencySymbol(settings.primaryCurrency)})`}
                                 className="px-2 py-1 border border-gray-300 rounded text-sm"
                               />
                             </div>
@@ -1452,11 +1493,16 @@ function App() {
                       />
                     </div>
                     <div>
-                      <label className="block text-xs text-gray-600 mb-1">Cost per meal (HKD)</label>
+                      <label className="block text-xs text-gray-600 mb-1">Cost per meal ({getCurrencySymbol(settings.primaryCurrency)})</label>
                       <input
                         type="number"
-                        value={costPerMeal}
-                        onChange={(e) => setCostPerMeal(parseFloat(e.target.value) || 0)}
+                        value={toDisplayCurrency(costPerMeal, settings)}
+                        onChange={(e) => {
+                          const displayValue = parseFloat(e.target.value) || 0;
+                          const hkdValue = toHKD(displayValue, settings);
+                          setCostPerMeal(hkdValue);
+                        }}
+                        placeholder={`Cost (${getCurrencySymbol(settings.primaryCurrency)})`}
                         className="w-full px-2 py-1 border border-gray-300 rounded text-sm"
                       />
                     </div>
@@ -1505,9 +1551,13 @@ function App() {
                             />
                             <input
                               type="number"
-                              value={editingActivity.pricePerPerson}
-                              onChange={(e) => setEditingActivity({ ...editingActivity, pricePerPerson: parseFloat(e.target.value) || 0 })}
-                              placeholder="Price per person (HKD)"
+                              value={toDisplayCurrency(editingActivity.pricePerPerson, settings)}
+                              onChange={(e) => {
+                                const displayValue = parseFloat(e.target.value) || 0;
+                                const hkdValue = toHKD(displayValue, settings);
+                                setEditingActivity({ ...editingActivity, pricePerPerson: hkdValue });
+                              }}
+                              placeholder={`Price per person (${getCurrencySymbol(settings.primaryCurrency)})`}
                               className="w-full px-2 py-1 border border-gray-300 rounded text-sm"
                             />
                             <input
@@ -1605,9 +1655,13 @@ function App() {
                               />
                               <input
                                 type="number"
-                                value={editingExpense.amount}
-                                onChange={(e) => setEditingExpense({ ...editingExpense, amount: parseFloat(e.target.value) || 0 })}
-                                placeholder="Amount (HKD)"
+                                value={toDisplayCurrency(editingExpense.amount, settings)}
+                                onChange={(e) => {
+                                  const displayValue = parseFloat(e.target.value) || 0;
+                                  const hkdValue = toHKD(displayValue, settings);
+                                  setEditingExpense({ ...editingExpense, amount: hkdValue });
+                                }}
+                                placeholder={`Amount (${getCurrencySymbol(settings.primaryCurrency)})`}
                                 className="w-full px-2 py-1 border border-gray-300 rounded text-sm"
                               />
                               <select
