@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Calculator, Users, Hotel, Utensils, Sparkles, DollarSign, TrendingUp, Settings as SettingsIcon, MapPin, Plane, Plus, Edit2, Trash2, Camera, Percent, PieChart, ChevronDown, ChevronUp, ArrowLeftRight, X } from 'lucide-react';
 
 interface Settings {
@@ -7,7 +7,9 @@ interface Settings {
   pricePerStudent: number;
   taxPercent: number;
   exchangeRate: number;
-  primaryCurrency: 'KZT' | 'USD';
+  primaryCurrency: 'HKD' | 'KZT';
+  mentorMealsPerDay: number;
+  mentorCostPerMeal: number;
 }
 
 interface Hotel {
@@ -53,6 +55,13 @@ interface CustomExpense {
   customCount: number;
 }
 
+interface MarginDistribution {
+  mentor: number;
+  ayazhan: number;
+  beks: number;
+  tair: number;
+}
+
 interface TaxConfig {
   mentor: number;
   ayazhan: number;
@@ -67,16 +76,16 @@ const DATES = {
   totalDays: 9
 };
 
-const formatCurrency = (amount: number, currency: 'KZT' | 'USD', exchangeRate: number) => {
-  if (currency === 'KZT') {
+const formatCurrency = (amount: number, currency: 'HKD' | 'KZT', exchangeRate: number) => {
+  if (currency === 'HKD') {
     return {
-      primary: amount.toLocaleString('en-US', { maximumFractionDigits: 0 }) + ' ₸',
-      secondary: (amount / exchangeRate).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' $'
+      primary: amount.toLocaleString('en-US', { maximumFractionDigits: 2 }) + ' HKD',
+      secondary: '₸' + (amount * exchangeRate).toLocaleString('en-US', { maximumFractionDigits: 0 })
     };
   } else {
     return {
-      primary: amount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' $',
-      secondary: (amount * exchangeRate).toLocaleString('en-US', { maximumFractionDigits: 0 }) + ' ₸'
+      primary: '₸' + amount.toLocaleString('en-US', { maximumFractionDigits: 0 }),
+      secondary: (amount / exchangeRate).toLocaleString('en-US', { maximumFractionDigits: 2 }) + ' HKD'
     };
   }
 };
@@ -151,31 +160,63 @@ const TRANSPORT: Transport = {
   ferry: 10
 };
 
+// LocalStorage helpers with debouncing
+let saveTimeout: ReturnType<typeof setTimeout> | null = null;
+
+const loadFromStorage = <T,>(key: string, defaultValue: T): T => {
+  try {
+    const item = localStorage.getItem(key);
+    return item ? JSON.parse(item) : defaultValue;
+  } catch {
+    return defaultValue;
+  }
+};
+
+const saveToStorage = (key: string, value: any) => {
+  if (saveTimeout) clearTimeout(saveTimeout);
+  saveTimeout = setTimeout(() => {
+    try {
+      localStorage.setItem(key, JSON.stringify(value));
+    } catch (e) {
+      console.error('Failed to save to localStorage:', e);
+    }
+  }, 500);
+};
+
 function App() {
-  const [settings, setSettings] = useState<Settings>({
+  const [settings, setSettings] = useState<Settings>(() => loadFromStorage('hk-trip-settings', {
     students: 24,
     mentors: 2,
     pricePerStudent: 0,
     taxPercent: 3,
-    exchangeRate: 440,
-    primaryCurrency: 'KZT'
-  });
+    exchangeRate: 59,
+    primaryCurrency: 'HKD' as const,
+    mentorMealsPerDay: 0,
+    mentorCostPerMeal: 100
+  }));
 
-  const [taxConfig, setTaxConfig] = useState<TaxConfig>({
+  const [marginDistribution, setMarginDistribution] = useState<MarginDistribution>(() => loadFromStorage('hk-trip-margin', {
+    mentor: 25,
+    ayazhan: 25,
+    beks: 25,
+    tair: 25
+  }));
+
+  const [taxConfig, setTaxConfig] = useState<TaxConfig>(() => loadFromStorage('hk-trip-tax', {
     mentor: 17,
     ayazhan: 17,
     beks: 17,
     tair: 0
-  });
+  }));
 
-  const [hotels, setHotels] = useState<Hotel[]>(INITIAL_HOTELS);
-  const [selectedHotelId, setSelectedHotelId] = useState<string>('dorsett');
+  const [hotels, setHotels] = useState<Hotel[]>(() => loadFromStorage('hk-trip-hotels', INITIAL_HOTELS));
+  const [selectedHotelId, setSelectedHotelId] = useState<string>(() => loadFromStorage('hk-trip-selected-hotel', 'dorsett'));
   const [editingHotel, setEditingHotel] = useState<Hotel | null>(null);
 
-  const [activities, setActivities] = useState<Activity[]>(INITIAL_ACTIVITIES);
+  const [activities, setActivities] = useState<Activity[]>(() => loadFromStorage('hk-trip-activities', INITIAL_ACTIVITIES));
   const [editingActivity, setEditingActivity] = useState<Activity | null>(null);
 
-  const [flights, setFlights] = useState<Flight[]>([
+  const [flights, setFlights] = useState<Flight[]>(() => loadFromStorage('hk-trip-flights', [
     {
       id: 'mentor-flight',
       name: 'Mentor Round-trip Flight',
@@ -185,33 +226,49 @@ function App() {
       price: 0,
       notes: 'Total round-trip cost per mentor'
     }
-  ]);
+  ]));
   const [editingFlight, setEditingFlight] = useState<Flight | null>(null);
 
-  const [mealsPerDay, setMealsPerDay] = useState(0);
-  const [costPerMeal, setCostPerMeal] = useState(100);
-  const [includeMentorMeals, setIncludeMentorMeals] = useState(true);
+  const [mealsPerDay, setMealsPerDay] = useState(() => loadFromStorage('hk-trip-meals-per-day', 0));
+  const [costPerMeal, setCostPerMeal] = useState(() => loadFromStorage('hk-trip-cost-per-meal', 100));
+  const [includeMentorMeals, setIncludeMentorMeals] = useState(() => loadFromStorage('hk-trip-include-mentor-meals', true));
 
-  const [customExpenses, setCustomExpenses] = useState<CustomExpense[]>([]);
+  const [customExpenses, setCustomExpenses] = useState<CustomExpense[]>(() => loadFromStorage('hk-trip-custom-expenses', []));
   const [editingExpense, setEditingExpense] = useState<CustomExpense | null>(null);
 
-  const [includeTransport, setIncludeTransport] = useState(true);
+  const [includeTransport, setIncludeTransport] = useState(() => loadFromStorage('hk-trip-include-transport', true));
   const [showSettings, setShowSettings] = useState(false);
   const [showBreakdown, setShowBreakdown] = useState(false);
+  const [showConverter, setShowConverter] = useState(false);
   
   // Accordion states
-  const [accordionState, setAccordionState] = useState({
+  const [accordionState, setAccordionState] = useState(() => loadFromStorage('hk-trip-accordion', {
     flights: true,
     hotel: true,
     transport: true,
     meals: true,
     activities: true,
     customExpenses: true
-  });
+  }));
 
   // Currency converter state
+  const [converterHkd, setConverterHkd] = useState('');
   const [converterKzt, setConverterKzt] = useState('');
-  const [converterUsd, setConverterUsd] = useState('');
+
+  // Auto-save to localStorage
+  useEffect(() => { saveToStorage('hk-trip-settings', settings); }, [settings]);
+  useEffect(() => { saveToStorage('hk-trip-margin', marginDistribution); }, [marginDistribution]);
+  useEffect(() => { saveToStorage('hk-trip-tax', taxConfig); }, [taxConfig]);
+  useEffect(() => { saveToStorage('hk-trip-hotels', hotels); }, [hotels]);
+  useEffect(() => { saveToStorage('hk-trip-selected-hotel', selectedHotelId); }, [selectedHotelId]);
+  useEffect(() => { saveToStorage('hk-trip-activities', activities); }, [activities]);
+  useEffect(() => { saveToStorage('hk-trip-flights', flights); }, [flights]);
+  useEffect(() => { saveToStorage('hk-trip-meals-per-day', mealsPerDay); }, [mealsPerDay]);
+  useEffect(() => { saveToStorage('hk-trip-cost-per-meal', costPerMeal); }, [costPerMeal]);
+  useEffect(() => { saveToStorage('hk-trip-include-mentor-meals', includeMentorMeals); }, [includeMentorMeals]);
+  useEffect(() => { saveToStorage('hk-trip-custom-expenses', customExpenses); }, [customExpenses]);
+  useEffect(() => { saveToStorage('hk-trip-include-transport', includeTransport); }, [includeTransport]);
+  useEffect(() => { saveToStorage('hk-trip-accordion', accordionState); }, [accordionState]);
 
   const selectedHotel = hotels.find(h => h.id === selectedHotelId) || hotels[0];
 
@@ -222,21 +279,29 @@ function App() {
   const toggleCurrency = () => {
     setSettings(prev => ({
       ...prev,
-      primaryCurrency: prev.primaryCurrency === 'KZT' ? 'USD' : 'KZT'
+      primaryCurrency: prev.primaryCurrency === 'HKD' ? 'KZT' : 'HKD'
     }));
+  };
+
+  const handleConverterHkdChange = (value: string) => {
+    setConverterHkd(value);
+    const num = parseFloat(value) || 0;
+    setConverterKzt((num * settings.exchangeRate).toFixed(0));
   };
 
   const handleConverterKztChange = (value: string) => {
     setConverterKzt(value);
     const num = parseFloat(value) || 0;
-    setConverterUsd((num / settings.exchangeRate).toFixed(2));
+    setConverterHkd((num / settings.exchangeRate).toFixed(2));
   };
 
-  const handleConverterUsdChange = (value: string) => {
-    setConverterUsd(value);
-    const num = parseFloat(value) || 0;
-    setConverterKzt((num * settings.exchangeRate).toFixed(0));
-  };
+  // Auto-calculate Tair's share to ensure 100% total
+  useEffect(() => {
+    const total = marginDistribution.mentor + marginDistribution.ayazhan + marginDistribution.beks;
+    if (total <= 100) {
+      setMarginDistribution(prev => ({ ...prev, tair: 100 - total }));
+    }
+  }, [marginDistribution.mentor, marginDistribution.ayazhan, marginDistribution.beks]);
 
   // Calculate hotel costs
   const calculateHotelCost = () => {
@@ -261,12 +326,14 @@ function App() {
     return (TRANSPORT.mtr + TRANSPORT.ferry) * totalPeople;
   };
 
-  // Calculate meal costs
+  // Calculate meal costs (for STUDENTS only, mentor meals separate!)
   const calculateMealCost = () => {
-    const totalPeople = includeMentorMeals 
-      ? settings.students + settings.mentors 
-      : settings.students;
-    return mealsPerDay * costPerMeal * DATES.totalDays * totalPeople;
+    return mealsPerDay * costPerMeal * DATES.totalDays * settings.students;
+  };
+
+  // Calculate MENTOR meal costs separately
+  const calculateMentorMealCost = () => {
+    return settings.mentorMealsPerDay * settings.mentorCostPerMeal * DATES.totalDays * settings.mentors;
   };
 
   // Calculate activities cost
@@ -301,11 +368,12 @@ function App() {
   const hotelCost = calculateHotelCost();
   const transportCost = calculateTransportCost();
   const mealCost = calculateMealCost();
+  const mentorMealCost = calculateMentorMealCost();
   const activitiesCost = calculateActivitiesCost();
   const flightsCost = calculateFlightsCost();
   const customExpensesCost = calculateCustomExpensesCost();
   
-  const totalCost = hotelCost.total + transportCost + mealCost + activitiesCost + flightsCost + customExpensesCost;
+  const totalCost = hotelCost.total + transportCost + mealCost + mentorMealCost + activitiesCost + flightsCost + customExpensesCost;
   
   // Revenue (only students pay)
   const totalRevenue = settings.students * settings.pricePerStudent;
@@ -317,20 +385,23 @@ function App() {
   // Profit before margin distribution
   const grossProfit = revenueAfterTax - totalCost;
   
-  // Margin distribution (4 equal shares)
-  const marginPerShare = grossProfit / 4;
+  // Margin distribution (customizable shares)
+  const marginMentor = (grossProfit * marginDistribution.mentor) / 100;
+  const marginAyazhan = (grossProfit * marginDistribution.ayazhan) / 100;
+  const marginBeks = (grossProfit * marginDistribution.beks) / 100;
+  const marginTair = (grossProfit * marginDistribution.tair) / 100;
   
   // Tax on each share
-  const taxOnMentorShare = (marginPerShare * taxConfig.mentor) / 100;
-  const taxOnAyazhanShare = (marginPerShare * taxConfig.ayazhan) / 100;
-  const taxOnBeksShare = (marginPerShare * taxConfig.beks) / 100;
-  const taxOnTairShare = (marginPerShare * taxConfig.tair) / 100;
+  const taxOnMentorShare = (marginMentor * taxConfig.mentor) / 100;
+  const taxOnAyazhanShare = (marginAyazhan * taxConfig.ayazhan) / 100;
+  const taxOnBeksShare = (marginBeks * taxConfig.beks) / 100;
+  const taxOnTairShare = (marginTair * taxConfig.tair) / 100;
   
   // Net amounts for each person
-  const netMentor = marginPerShare - taxOnMentorShare;
-  const netAyazhan = marginPerShare - taxOnAyazhanShare;
-  const netBeks = marginPerShare - taxOnBeksShare;
-  const netTair = marginPerShare - taxOnTairShare;
+  const netMentor = marginMentor - taxOnMentorShare;
+  const netAyazhan = marginAyazhan - taxOnAyazhanShare;
+  const netBeks = marginBeks - taxOnBeksShare;
+  const netTair = marginTair - taxOnTairShare;
   
   const totalTaxOnShares = taxOnMentorShare + taxOnAyazhanShare + taxOnBeksShare + taxOnTairShare;
   const netProfit = grossProfit - totalTaxOnShares;
@@ -339,7 +410,6 @@ function App() {
   
   // Cost per student
   const costPerStudent = settings.students > 0 ? totalCost / settings.students : 0;
-  const marginPerStudent = settings.students > 0 ? grossProfit / settings.students : 0;
 
   const toggleActivity = (id: string) => {
     setActivities(activities.map(a => 
@@ -443,39 +513,61 @@ function App() {
 
   return (
     <div className="min-h-screen bg-gray-50 p-3 relative">
-      {/* Currency Converter Widget */}
-      <div className="fixed right-4 top-4 z-50 bg-white rounded-lg shadow-lg p-3 w-64 border-2 border-blue-200">
-        <div className="flex items-center justify-between mb-2">
-          <h3 className="text-sm font-bold text-gray-700">Currency Converter</h3>
-          <ArrowLeftRight className="w-4 h-4 text-blue-500" />
+      {/* Currency Converter Modal */}
+      {showConverter && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-sm">
+            <div className="sticky top-0 bg-white border-b p-4 flex justify-between items-center rounded-t-xl">
+              <h2 className="text-xl font-bold flex items-center gap-2">
+                <ArrowLeftRight className="w-5 h-5 text-blue-500" />
+                💱 Currency Converter
+              </h2>
+              <button
+                onClick={() => setShowConverter(false)}
+                className="p-2 hover:bg-gray-100 rounded-lg"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            
+            <div className="p-6 space-y-4">
+              <div>
+                <label className="text-sm font-medium text-gray-700 mb-2 block">Hong Kong Dollar (HKD 💵)</label>
+                <input
+                  type="number"
+                  value={converterHkd}
+                  onChange={(e) => handleConverterHkdChange(e.target.value)}
+                  placeholder="0.00"
+                  step="0.01"
+                  className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg text-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                />
+              </div>
+              
+              <div className="flex items-center justify-center">
+                <div className="bg-gray-100 rounded-full p-2">
+                  <ArrowLeftRight className="w-5 h-5 text-gray-600" />
+                </div>
+              </div>
+              
+              <div>
+                <label className="text-sm font-medium text-gray-700 mb-2 block">Kazakhstan Tenge (KZT ₸)</label>
+                <input
+                  type="number"
+                  value={converterKzt}
+                  onChange={(e) => handleConverterKztChange(e.target.value)}
+                  placeholder="0"
+                  className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg text-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                />
+              </div>
+              
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-center">
+                <div className="text-sm text-gray-600">Exchange Rate</div>
+                <div className="text-lg font-bold text-blue-600">1 HKD = {settings.exchangeRate} KZT</div>
+              </div>
+            </div>
+          </div>
         </div>
-        <div className="space-y-2">
-          <div>
-            <label className="text-xs text-gray-600">KZT ₸</label>
-            <input
-              type="number"
-              value={converterKzt}
-              onChange={(e) => handleConverterKztChange(e.target.value)}
-              placeholder="0"
-              className="w-full px-2 py-1 border border-gray-300 rounded text-sm"
-            />
-          </div>
-          <div>
-            <label className="text-xs text-gray-600">USD $</label>
-            <input
-              type="number"
-              value={converterUsd}
-              onChange={(e) => handleConverterUsdChange(e.target.value)}
-              placeholder="0.00"
-              step="0.01"
-              className="w-full px-2 py-1 border border-gray-300 rounded text-sm"
-            />
-          </div>
-          <div className="text-xs text-gray-500 text-center">
-            Rate: 1 $ = {settings.exchangeRate} ₸
-          </div>
-        </div>
-      </div>
+      )}
 
       {/* Breakdown Modal */}
       {showBreakdown && (
@@ -539,6 +631,18 @@ function App() {
                     <span>• Hotel ({hotelCost.pairs} pairs + {hotelCost.singles} singles)</span>
                     <span>{formatCurrency(hotelCost.total, settings.primaryCurrency, settings.exchangeRate).primary}</span>
                   </div>
+                  {flightsCost > 0 && (
+                    <div className="flex justify-between">
+                      <span>• Flights ({settings.mentors} mentors)</span>
+                      <span>{formatCurrency(flightsCost, settings.primaryCurrency, settings.exchangeRate).primary}</span>
+                    </div>
+                  )}
+                  {mentorMealCost > 0 && (
+                    <div className="flex justify-between">
+                      <span>• Mentor Meals ({settings.mentorMealsPerDay}/day × {settings.mentors} mentors × {DATES.totalDays} days)</span>
+                      <span>{formatCurrency(mentorMealCost, settings.primaryCurrency, settings.exchangeRate).primary}</span>
+                    </div>
+                  )}
                   {transportCost > 0 && (
                     <div className="flex justify-between">
                       <span>• Transport (MTR + Ferry)</span>
@@ -547,7 +651,7 @@ function App() {
                   )}
                   {mealCost > 0 && (
                     <div className="flex justify-between">
-                      <span>• Meals ({mealsPerDay}/day × {includeMentorMeals ? settings.students + settings.mentors : settings.students} people × {DATES.totalDays} days)</span>
+                      <span>• Student Meals ({mealsPerDay}/day × {settings.students} students × {DATES.totalDays} days)</span>
                       <span>{formatCurrency(mealCost, settings.primaryCurrency, settings.exchangeRate).primary}</span>
                     </div>
                   )}
@@ -555,12 +659,6 @@ function App() {
                     <div className="flex justify-between">
                       <span>• Activities ({activities.filter(a => a.enabled).length} items)</span>
                       <span>{formatCurrency(activitiesCost, settings.primaryCurrency, settings.exchangeRate).primary}</span>
-                    </div>
-                  )}
-                  {flightsCost > 0 && (
-                    <div className="flex justify-between">
-                      <span>• Flights ({settings.mentors} mentors)</span>
-                      <span>{formatCurrency(flightsCost, settings.primaryCurrency, settings.exchangeRate).primary}</span>
                     </div>
                   )}
                   {customExpensesCost > 0 && (
@@ -598,18 +696,20 @@ function App() {
 
               {/* Margin Distribution */}
               <div className="bg-purple-50 border border-purple-200 rounded-lg p-4">
-                <h3 className="font-bold text-lg text-purple-800 mb-2">🎯 Margin Distribution (4 Equal Shares)</h3>
+                <h3 className="font-bold text-lg text-purple-800 mb-2">🎯 Margin Distribution (Customizable Shares)</h3>
                 <div className="text-sm space-y-2">
-                  <div className="flex justify-between">
-                    <span>Each share (before tax)</span>
-                    <span className="font-bold">{formatCurrency(marginPerShare, settings.primaryCurrency, settings.exchangeRate).primary}</span>
+                  <div className="flex justify-between text-xs text-gray-600 mb-2">
+                    <span>Total shares: {marginDistribution.mentor + marginDistribution.ayazhan + marginDistribution.beks + marginDistribution.tair}%</span>
                   </div>
                   
                   <div className="mt-3 pt-3 border-t border-purple-300 space-y-3">
                     <div className="space-y-1">
                       <div className="flex justify-between text-xs">
-                        <span className="font-medium">Ментор (Mentor)</span>
+                        <span className="font-medium">Ментор (Mentor) - {marginDistribution.mentor}%</span>
                         <span className="text-gray-600">Tax: {taxConfig.mentor}%</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span>Share: {formatCurrency(marginMentor, settings.primaryCurrency, settings.exchangeRate).primary}</span>
                       </div>
                       <div className="flex justify-between">
                         <span className="text-red-600">- Tax: {formatCurrency(taxOnMentorShare, settings.primaryCurrency, settings.exchangeRate).primary}</span>
@@ -619,8 +719,11 @@ function App() {
 
                     <div className="space-y-1">
                       <div className="flex justify-between text-xs">
-                        <span className="font-medium">Аяжан (Ayazhan)</span>
+                        <span className="font-medium">Аяжан (Ayazhan) - {marginDistribution.ayazhan}%</span>
                         <span className="text-gray-600">Tax: {taxConfig.ayazhan}%</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span>Share: {formatCurrency(marginAyazhan, settings.primaryCurrency, settings.exchangeRate).primary}</span>
                       </div>
                       <div className="flex justify-between">
                         <span className="text-red-600">- Tax: {formatCurrency(taxOnAyazhanShare, settings.primaryCurrency, settings.exchangeRate).primary}</span>
@@ -630,8 +733,11 @@ function App() {
 
                     <div className="space-y-1">
                       <div className="flex justify-between text-xs">
-                        <span className="font-medium">Бекс (Beks)</span>
+                        <span className="font-medium">Бекс (Beks) - {marginDistribution.beks}%</span>
                         <span className="text-gray-600">Tax: {taxConfig.beks}%</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span>Share: {formatCurrency(marginBeks, settings.primaryCurrency, settings.exchangeRate).primary}</span>
                       </div>
                       <div className="flex justify-between">
                         <span className="text-red-600">- Tax: {formatCurrency(taxOnBeksShare, settings.primaryCurrency, settings.exchangeRate).primary}</span>
@@ -641,8 +747,11 @@ function App() {
 
                     <div className="space-y-1">
                       <div className="flex justify-between text-xs">
-                        <span className="font-medium">Tair (You)</span>
+                        <span className="font-medium">Tair (You) - {marginDistribution.tair}%</span>
                         <span className="text-gray-600">Tax: {taxConfig.tair}%</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span>Share: {formatCurrency(marginTair, settings.primaryCurrency, settings.exchangeRate).primary}</span>
                       </div>
                       <div className="flex justify-between">
                         <span className="text-red-600">- Tax: {formatCurrency(taxOnTairShare, settings.primaryCurrency, settings.exchangeRate).primary}</span>
@@ -695,11 +804,18 @@ function App() {
             </div>
             <div className="flex gap-2">
               <button
+                onClick={() => setShowConverter(true)}
+                className="px-3 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 transition text-sm flex items-center gap-2"
+              >
+                <ArrowLeftRight className="w-4 h-4" />
+                💱 Converter
+              </button>
+              <button
                 onClick={toggleCurrency}
                 className="px-3 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition text-sm flex items-center gap-2"
               >
                 <ArrowLeftRight className="w-4 h-4" />
-                {settings.primaryCurrency === 'KZT' ? 'KZT ₸' : 'USD $'}
+                {settings.primaryCurrency === 'HKD' ? 'HKD 💵' : 'KZT ₸'}
               </button>
               <button
                 onClick={() => setShowSettings(!showSettings)}
@@ -777,7 +893,7 @@ function App() {
 
               <div>
                 <label className="block text-xs font-medium text-gray-700 mb-1">
-                  Exchange Rate (1 USD =)
+                  Exchange Rate (1 HKD =)
                 </label>
                 <input
                   type="number"
@@ -785,13 +901,75 @@ function App() {
                   onChange={(e) => setSettings({ ...settings, exchangeRate: parseFloat(e.target.value) || 1 })}
                   className="w-full px-3 py-1.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
                 />
-                <p className="text-xs text-gray-500 mt-1">KZT per 1 USD</p>
+                <p className="text-xs text-gray-500 mt-1">KZT per 1 HKD</p>
+              </div>
+            </div>
+
+            {/* Margin Distribution */}
+            <div className="border-t pt-3 mb-4">
+              <h3 className="text-sm font-bold mb-2">💰 Margin Distribution (%)</h3>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                <div>
+                  <label className="block text-xs text-gray-600 mb-1">Ментор (%)</label>
+                  <input
+                    type="number"
+                    min="0"
+                    max="100"
+                    value={marginDistribution.mentor}
+                    onChange={(e) => {
+                      const val = Math.min(100, Math.max(0, parseFloat(e.target.value) || 0));
+                      setMarginDistribution({ ...marginDistribution, mentor: val });
+                    }}
+                    className="w-full px-2 py-1 border border-gray-300 rounded text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs text-gray-600 mb-1">Аяжан (%)</label>
+                  <input
+                    type="number"
+                    min="0"
+                    max="100"
+                    value={marginDistribution.ayazhan}
+                    onChange={(e) => {
+                      const val = Math.min(100, Math.max(0, parseFloat(e.target.value) || 0));
+                      setMarginDistribution({ ...marginDistribution, ayazhan: val });
+                    }}
+                    className="w-full px-2 py-1 border border-gray-300 rounded text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs text-gray-600 mb-1">Бекс (%)</label>
+                  <input
+                    type="number"
+                    min="0"
+                    max="100"
+                    value={marginDistribution.beks}
+                    onChange={(e) => {
+                      const val = Math.min(100, Math.max(0, parseFloat(e.target.value) || 0));
+                      setMarginDistribution({ ...marginDistribution, beks: val });
+                    }}
+                    className="w-full px-2 py-1 border border-gray-300 rounded text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs text-gray-600 mb-1">Tair (auto)</label>
+                  <input
+                    type="number"
+                    value={marginDistribution.tair}
+                    disabled
+                    className="w-full px-2 py-1 border border-gray-300 rounded text-sm bg-gray-100"
+                  />
+                </div>
+              </div>
+              <div className="text-xs text-gray-500 mt-2">
+                Total: {marginDistribution.mentor + marginDistribution.ayazhan + marginDistribution.beks + marginDistribution.tair}% 
+                {(marginDistribution.mentor + marginDistribution.ayazhan + marginDistribution.beks + marginDistribution.tair) === 100 ? ' ✅' : ' ⚠️ Must equal 100%'}
               </div>
             </div>
 
             {/* Tax Config */}
             <div className="border-t pt-3">
-              <h3 className="text-sm font-bold mb-2">Margin Distribution Tax Rates</h3>
+              <h3 className="text-sm font-bold mb-2">📊 Individual Tax Rates (%)</h3>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                 <div>
                   <label className="block text-xs text-gray-600 mb-1">Ментор (%)</label>
@@ -943,7 +1121,7 @@ function App() {
                                 type="number"
                                 value={editingFlight.price}
                                 onChange={(e) => setEditingFlight({ ...editingFlight, price: parseFloat(e.target.value) || 0 })}
-                                placeholder={`Price (${settings.primaryCurrency})`}
+                                placeholder="Price (HKD)"
                                 className="px-2 py-1 border border-gray-300 rounded text-sm"
                               />
                             </div>
@@ -1017,6 +1195,46 @@ function App() {
                       </div>
                     </div>
                   )}
+                  
+                  {/* MENTOR MEALS - RIGHT NEXT TO FLIGHTS! */}
+                  <div className="mt-4 pt-4 border-t border-gray-200">
+                    <h3 className="text-sm font-bold mb-2 flex items-center gap-2">
+                      <Utensils className="w-4 h-4" />
+                      Mentor Meals (per mentor per day)
+                    </h3>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <label className="block text-xs text-gray-600 mb-1">Meals/day</label>
+                        <input
+                          type="number"
+                          min="0"
+                          max="3"
+                          value={settings.mentorMealsPerDay}
+                          onChange={(e) => setSettings({ ...settings, mentorMealsPerDay: parseInt(e.target.value) || 0 })}
+                          className="w-full px-2 py-1 border border-gray-300 rounded text-sm"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs text-gray-600 mb-1">Cost/meal (HKD)</label>
+                        <input
+                          type="number"
+                          value={settings.mentorCostPerMeal}
+                          onChange={(e) => setSettings({ ...settings, mentorCostPerMeal: parseFloat(e.target.value) || 0 })}
+                          className="w-full px-2 py-1 border border-gray-300 rounded text-sm"
+                        />
+                      </div>
+                    </div>
+                    {mentorMealCost > 0 && (
+                      <div className="mt-2 p-2 bg-blue-50 rounded text-xs">
+                        <div className="font-semibold">
+                          Total: {formatCurrency(mentorMealCost, settings.primaryCurrency, settings.exchangeRate).primary}
+                        </div>
+                        <div className="text-gray-600 text-xs">
+                          {settings.mentorMealsPerDay} meals/day × {settings.mentorCostPerMeal} HKD × {DATES.totalDays} days × {settings.mentors} mentors
+                        </div>
+                      </div>
+                    )}
+                  </div>
                 </div>
               )}
             </div>
@@ -1053,14 +1271,14 @@ function App() {
                                 type="number"
                                 value={editingHotel.pricePerPair}
                                 onChange={(e) => setEditingHotel({ ...editingHotel, pricePerPair: parseFloat(e.target.value) || 0 })}
-                                placeholder={`Price/pair (${settings.primaryCurrency})`}
+                                placeholder="Price/pair (HKD)"
                                 className="px-2 py-1 border border-gray-300 rounded text-sm"
                               />
                               <input
                                 type="number"
                                 value={editingHotel.pricePerPerson}
                                 onChange={(e) => setEditingHotel({ ...editingHotel, pricePerPerson: parseFloat(e.target.value) || 0 })}
-                                placeholder={`Price/solo (${settings.primaryCurrency})`}
+                                placeholder="Price/solo (HKD)"
                                 className="px-2 py-1 border border-gray-300 rounded text-sm"
                               />
                             </div>
@@ -1129,17 +1347,21 @@ function App() {
                             </button>
                             <div className="flex justify-between items-start mb-1 pr-8">
                               <div>
-                                <h3 className="font-semibold text-sm text-gray-900">{hotel.name}</h3>
-                                <p className="text-xs text-gray-500 mt-1">{hotel.notes}</p>
-                              </div>
-                              <div className="text-right">
-                                <div className="text-xs font-medium text-gray-900">{formatCurrency(hotel.pricePerPair, settings.primaryCurrency, settings.exchangeRate).primary}</div>
-                                <div className="text-xs text-gray-500">pair</div>
+                                <h3 className="font-bold text-sm">{hotel.name}</h3>
+                                <div className="text-xs text-gray-600 mt-1 space-y-0.5">
+                                  <div>Pair: {formatCurrency(hotel.pricePerPair, settings.primaryCurrency, settings.exchangeRate).primary}</div>
+                                  <div>Solo: {formatCurrency(hotel.pricePerPerson, settings.primaryCurrency, settings.exchangeRate).primary}</div>
+                                </div>
                               </div>
                             </div>
-                            <div className="flex gap-2 text-xs text-green-600">
-                              {hotel.includesBreakfast && <span>✓ Breakfast</span>}
-                              {hotel.includesTransfer && <span>✓ Transfer</span>}
+                            {hotel.notes && <div className="text-xs text-gray-500 mt-1">{hotel.notes}</div>}
+                            <div className="flex gap-2 mt-2">
+                              {hotel.includesBreakfast && (
+                                <span className="text-xs bg-green-100 text-green-800 px-2 py-0.5 rounded">🍳 Breakfast</span>
+                              )}
+                              {hotel.includesTransfer && (
+                                <span className="text-xs bg-blue-100 text-blue-800 px-2 py-0.5 rounded">🚐 Transfer</span>
+                              )}
                             </div>
                           </div>
                         )}
@@ -1148,17 +1370,11 @@ function App() {
                   </div>
                   <button
                     onClick={addHotel}
-                    className="w-full px-3 py-1.5 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition text-xs flex items-center justify-center gap-1 mb-2"
+                    className="w-full px-3 py-1.5 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition text-xs flex items-center justify-center gap-1"
                   >
                     <Plus className="w-3 h-3" />
                     Add Hotel
                   </button>
-                  <div className="p-2 bg-gray-50 rounded-lg text-xs text-gray-600">
-                    <div>Rooms: {hotelCost.pairs} pairs + {hotelCost.singles} singles</div>
-                    <div className="font-semibold text-gray-900 mt-1">
-                      Total: {formatCurrency(hotelCost.total, settings.primaryCurrency, settings.exchangeRate).primary}
-                    </div>
-                  </div>
                 </div>
               )}
             </div>
@@ -1178,31 +1394,33 @@ function App() {
               
               {accordionState.transport && (
                 <div className="p-3 border-t">
-                  <label className="flex items-center gap-2 p-3 border-2 border-gray-200 rounded-lg cursor-pointer hover:border-gray-300 transition">
+                  <label className="flex items-center gap-2 mb-3">
                     <input
                       type="checkbox"
                       checked={includeTransport}
                       onChange={(e) => setIncludeTransport(e.target.checked)}
                       className="w-4 h-4"
                     />
-                    <div className="flex-1">
-                      <div className="font-semibold text-sm text-gray-900">MTR + Buses + Ferry</div>
-                      <div className="text-xs text-gray-500 mt-1">
-                        {formatCurrency(TRANSPORT.mtr + TRANSPORT.ferry, settings.primaryCurrency, settings.exchangeRate).primary} per person
-                      </div>
-                    </div>
-                    <div className="text-right">
-                      <div className="text-xs font-medium text-gray-700">
-                        {formatCurrency((TRANSPORT.mtr + TRANSPORT.ferry) * (settings.students + settings.mentors), settings.primaryCurrency, settings.exchangeRate).primary}
-                      </div>
-                      <div className="text-xs text-gray-500">total</div>
-                    </div>
+                    <span className="text-sm">Include MTR & Ferry costs</span>
                   </label>
+                  
+                  {includeTransport && (
+                    <div className="bg-gray-50 rounded-lg p-3 text-xs space-y-1">
+                      <div>MTR/Buses: {TRANSPORT.mtr} HKD per person</div>
+                      <div>Ferry: {TRANSPORT.ferry} HKD per person</div>
+                      <div className="font-semibold pt-2 border-t">
+                        Total: {formatCurrency(transportCost, settings.primaryCurrency, settings.exchangeRate).primary}
+                      </div>
+                      <div className="text-gray-500">
+                        ({settings.students + settings.mentors} people × {TRANSPORT.mtr + TRANSPORT.ferry} HKD)
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
 
-            {/* Meals */}
+            {/* Meals (Students Only!) */}
             <div className="bg-white rounded-xl shadow-sm">
               <button
                 onClick={() => toggleAccordion('meals')}
@@ -1210,69 +1428,44 @@ function App() {
               >
                 <h2 className="text-base font-bold flex items-center gap-2">
                   <Utensils className="w-4 h-4" />
-                  Meals
+                  Student Meals
                 </h2>
                 {accordionState.meals ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
               </button>
               
               {accordionState.meals && (
-                <div className="p-3 border-t space-y-3">
-                  <div>
-                    <label className="block text-xs font-medium text-gray-700 mb-2">
-                      Number of meals per day: {mealsPerDay}
-                    </label>
-                    <input
-                      type="range"
-                      min="0"
-                      max="3"
-                      value={mealsPerDay}
-                      onChange={(e) => setMealsPerDay(parseInt(e.target.value))}
-                      className="w-full"
-                    />
-                    <div className="flex justify-between text-xs text-gray-500 mt-1">
-                      <span>0</span>
-                      <span>1</span>
-                      <span>2</span>
-                      <span>3</span>
+                <div className="p-3 border-t">
+                  <div className="grid grid-cols-2 gap-3 mb-3">
+                    <div>
+                      <label className="block text-xs text-gray-600 mb-1">Meals per day</label>
+                      <input
+                        type="number"
+                        min="0"
+                        value={mealsPerDay}
+                        onChange={(e) => setMealsPerDay(parseInt(e.target.value) || 0)}
+                        className="w-full px-2 py-1 border border-gray-300 rounded text-sm"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs text-gray-600 mb-1">Cost per meal (HKD)</label>
+                      <input
+                        type="number"
+                        value={costPerMeal}
+                        onChange={(e) => setCostPerMeal(parseFloat(e.target.value) || 0)}
+                        className="w-full px-2 py-1 border border-gray-300 rounded text-sm"
+                      />
                     </div>
                   </div>
                   
-                  {mealsPerDay > 0 && (
-                    <>
-                      <div>
-                        <label className="block text-xs font-medium text-gray-700 mb-1">
-                          Cost per meal per person per day ({settings.primaryCurrency})
-                        </label>
-                        <input
-                          type="number"
-                          value={costPerMeal}
-                          onChange={(e) => setCostPerMeal(parseFloat(e.target.value) || 0)}
-                          className="w-full px-2 py-1 border border-gray-300 rounded text-sm"
-                        />
-                        <p className="text-xs text-gray-500 mt-1">
-                          {formatCurrency(costPerMeal, settings.primaryCurrency, settings.exchangeRate).secondary}
-                        </p>
+                  {mealCost > 0 && (
+                    <div className="bg-gray-50 rounded-lg p-2 text-xs">
+                      <div className="font-semibold">
+                        Total: {formatCurrency(mealCost, settings.primaryCurrency, settings.exchangeRate).primary}
                       </div>
-
-                      <label className="flex items-center gap-2 text-sm">
-                        <input
-                          type="checkbox"
-                          checked={includeMentorMeals}
-                          onChange={(e) => setIncludeMentorMeals(e.target.checked)}
-                          className="w-4 h-4"
-                        />
-                        Include mentor meals
-                      </label>
-
-                      <div className="p-2 bg-gray-50 rounded-lg text-xs">
-                        <div className="text-gray-600">
-                          {mealsPerDay} meals × {formatCurrency(costPerMeal, settings.primaryCurrency, settings.exchangeRate).primary} × {DATES.totalDays} days × {includeMentorMeals ? settings.students + settings.mentors : settings.students} people
-                        </div>
-                        <div className="font-semibold text-gray-900 mt-1">
-                          Total: {formatCurrency(mealCost, settings.primaryCurrency, settings.exchangeRate).primary}
-                        </div>
+                      <div className="text-gray-500 mt-0.5">
+                        {mealsPerDay} meals/day × {costPerMeal} HKD × {DATES.totalDays} days × {settings.students} students
                       </div>
-                    </>
+                    </div>
                   )}
                 </div>
               )}
@@ -1302,14 +1495,14 @@ function App() {
                               type="text"
                               value={editingActivity.name}
                               onChange={(e) => setEditingActivity({ ...editingActivity, name: e.target.value })}
-                              placeholder="Name"
+                              placeholder="Activity name"
                               className="w-full px-2 py-1 border border-gray-300 rounded text-sm"
                             />
                             <input
                               type="number"
                               value={editingActivity.pricePerPerson}
                               onChange={(e) => setEditingActivity({ ...editingActivity, pricePerPerson: parseFloat(e.target.value) || 0 })}
-                              placeholder={`Price per person (${settings.primaryCurrency})`}
+                              placeholder="Price per person (HKD)"
                               className="w-full px-2 py-1 border border-gray-300 rounded text-sm"
                             />
                             <input
@@ -1341,36 +1534,26 @@ function App() {
                             </div>
                           </div>
                         ) : (
-                          <div
-                            className={`p-3 border-2 rounded-lg transition relative ${
-                              activity.enabled ? 'border-blue-500 bg-blue-50' : 'border-gray-200'
-                            }`}
-                          >
-                            <div className="absolute top-2 right-2">
-                              <button
-                                onClick={() => setEditingActivity(activity)}
-                                className="p-1 hover:bg-gray-100 rounded"
-                              >
-                                <Edit2 className="w-3 h-3 text-gray-600" />
-                              </button>
-                            </div>
-                            <div className="flex items-start gap-2 pr-8">
-                              <input
-                                type="checkbox"
-                                checked={activity.enabled}
-                                onChange={() => toggleActivity(activity.id)}
-                                className="mt-0.5 w-4 h-4"
-                              />
-                              <div className="flex-1">
-                                <h3 className="font-semibold text-sm text-gray-900">{activity.name}</h3>
-                                <p className="text-xs text-gray-500 mt-1">{activity.notes}</p>
-                                {activity.enabled && (
-                                  <div className="text-xs text-blue-600 mt-1 font-medium">
-                                    {formatCurrency(activity.pricePerPerson * (settings.students + settings.mentors), settings.primaryCurrency, settings.exchangeRate).primary}
-                                  </div>
-                                )}
+                          <div className="flex items-center gap-2 p-2 border-2 border-gray-200 rounded-lg">
+                            <input
+                              type="checkbox"
+                              checked={activity.enabled}
+                              onChange={() => toggleActivity(activity.id)}
+                              className="w-4 h-4"
+                            />
+                            <div className="flex-1">
+                              <div className="text-sm font-semibold">{activity.name}</div>
+                              <div className="text-xs text-gray-600">
+                                {formatCurrency(activity.pricePerPerson, settings.primaryCurrency, settings.exchangeRate).primary}/person
                               </div>
+                              {activity.notes && <div className="text-xs text-gray-500 mt-1">{activity.notes}</div>}
                             </div>
+                            <button
+                              onClick={() => setEditingActivity(activity)}
+                              className="p-1 hover:bg-gray-100 rounded"
+                            >
+                              <Edit2 className="w-3 h-3 text-gray-600" />
+                            </button>
                           </div>
                         )}
                       </div>
@@ -1378,16 +1561,11 @@ function App() {
                   </div>
                   <button
                     onClick={addActivity}
-                    className="w-full px-3 py-1.5 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition text-xs flex items-center justify-center gap-1 mb-2"
+                    className="w-full px-3 py-1.5 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition text-xs flex items-center justify-center gap-1"
                   >
                     <Plus className="w-3 h-3" />
                     Add Activity
                   </button>
-                  <div className="p-2 bg-gray-50 rounded-lg text-xs text-gray-600">
-                    <div className="font-semibold text-gray-900">
-                      Total: {formatCurrency(activitiesCost, settings.primaryCurrency, settings.exchangeRate).primary}
-                    </div>
-                  </div>
                 </div>
               )}
             </div>
@@ -1399,325 +1577,205 @@ function App() {
                 className="w-full p-3 flex justify-between items-center hover:bg-gray-50 rounded-t-xl"
               >
                 <h2 className="text-base font-bold flex items-center gap-2">
-                  <Plus className="w-4 h-4" />
-                  Additional Expenses
+                  <DollarSign className="w-4 h-4" />
+                  Custom Expenses
                 </h2>
                 {accordionState.customExpenses ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
               </button>
               
               {accordionState.customExpenses && (
                 <div className="p-3 border-t">
-                  <div className="space-y-2 mb-3">
-                    {customExpenses.map((expense) => (
-                      <div key={expense.id} className="p-3 border-2 border-gray-200 rounded-lg">
-                        {editingExpense?.id === expense.id ? (
-                          <div className="space-y-2">
-                            <input
-                              type="text"
-                              value={editingExpense.name}
-                              onChange={(e) => setEditingExpense({ ...editingExpense, name: e.target.value })}
-                              placeholder="Name"
-                              className="w-full px-2 py-1 border border-gray-300 rounded text-sm"
-                            />
-                            <div className="grid grid-cols-2 gap-2">
+                  {customExpenses.length > 0 && (
+                    <div className="space-y-2 mb-3">
+                      {customExpenses.map((expense) => (
+                        <div key={expense.id}>
+                          {editingExpense?.id === expense.id ? (
+                            <div className="p-3 border-2 border-blue-500 rounded-lg space-y-2">
+                              <input
+                                type="text"
+                                value={editingExpense.name}
+                                onChange={(e) => setEditingExpense({ ...editingExpense, name: e.target.value })}
+                                placeholder="Expense name"
+                                className="w-full px-2 py-1 border border-gray-300 rounded text-sm"
+                              />
                               <input
                                 type="number"
                                 value={editingExpense.amount}
                                 onChange={(e) => setEditingExpense({ ...editingExpense, amount: parseFloat(e.target.value) || 0 })}
-                                placeholder={`Amount (${settings.primaryCurrency})`}
-                                className="px-2 py-1 border border-gray-300 rounded text-sm"
+                                placeholder="Amount (HKD)"
+                                className="w-full px-2 py-1 border border-gray-300 rounded text-sm"
                               />
                               <select
                                 value={editingExpense.frequency}
-                                onChange={(e) => setEditingExpense({ ...editingExpense, frequency: e.target.value as 'once' | 'perDay' | 'custom' })}
-                                className="px-2 py-1 border border-gray-300 rounded text-sm"
-                              >
-                                <option value="once">One-time</option>
-                                <option value="perDay">Per day</option>
-                                <option value="custom">Custom count</option>
-                              </select>
-                            </div>
-                            {editingExpense.frequency === 'custom' && (
-                              <input
-                                type="number"
-                                value={editingExpense.customCount}
-                                onChange={(e) => setEditingExpense({ ...editingExpense, customCount: parseInt(e.target.value) || 1 })}
-                                placeholder="Count"
+                                onChange={(e) => setEditingExpense({ ...editingExpense, frequency: e.target.value as any })}
                                 className="w-full px-2 py-1 border border-gray-300 rounded text-sm"
-                              />
-                            )}
-                            <div className="flex gap-2">
-                              <button
-                                onClick={() => updateCustomExpense(editingExpense)}
-                                className="px-2 py-1 bg-green-500 text-white rounded text-xs hover:bg-green-600"
                               >
-                                Save
-                              </button>
-                              <button
-                                onClick={() => setEditingExpense(null)}
-                                className="px-2 py-1 bg-gray-300 text-gray-700 rounded text-xs hover:bg-gray-400"
-                              >
-                                Cancel
-                              </button>
-                            </div>
-                          </div>
-                        ) : (
-                          <div className="flex justify-between items-start">
-                            <div className="flex-1">
-                              <h3 className="font-semibold text-sm text-gray-900">{expense.name}</h3>
-                              <div className="text-xs text-gray-600 mt-1">
-                                {formatCurrency(expense.amount, settings.primaryCurrency, settings.exchangeRate).primary} × 
-                                {expense.frequency === 'once' ? ' once' : expense.frequency === 'perDay' ? ` ${DATES.totalDays} days` : ` ${expense.customCount}x`}
-                                {' '} × {settings.students + settings.mentors} people
+                                <option value="once">Once (total)</option>
+                                <option value="perDay">Per day</option>
+                                <option value="custom">Custom multiplier</option>
+                              </select>
+                              {editingExpense.frequency === 'custom' && (
+                                <input
+                                  type="number"
+                                  value={editingExpense.customCount}
+                                  onChange={(e) => setEditingExpense({ ...editingExpense, customCount: parseInt(e.target.value) || 1 })}
+                                  placeholder="Multiplier"
+                                  className="w-full px-2 py-1 border border-gray-300 rounded text-sm"
+                                />
+                              )}
+                              <div className="flex gap-2">
+                                <button
+                                  onClick={() => updateCustomExpense(editingExpense)}
+                                  className="px-2 py-1 bg-green-500 text-white rounded text-xs hover:bg-green-600"
+                                >
+                                  Save
+                                </button>
+                                <button
+                                  onClick={() => setEditingExpense(null)}
+                                  className="px-2 py-1 bg-gray-300 text-gray-700 rounded text-xs hover:bg-gray-400"
+                                >
+                                  Cancel
+                                </button>
+                                <button
+                                  onClick={() => { deleteCustomExpense(expense.id); setEditingExpense(null); }}
+                                  className="px-2 py-1 bg-red-500 text-white rounded text-xs hover:bg-red-600 ml-auto"
+                                >
+                                  Delete
+                                </button>
                               </div>
-                              <div className="text-xs text-blue-600 mt-1 font-medium">
-                                Total: {formatCurrency(
-                                  expense.amount * 
-                                  (expense.frequency === 'once' ? 1 : expense.frequency === 'perDay' ? DATES.totalDays : expense.customCount) * 
-                                  (settings.students + settings.mentors),
-                                  settings.primaryCurrency,
-                                  settings.exchangeRate
-                                ).primary}
+                            </div>
+                          ) : (
+                            <div className="flex items-center justify-between p-2 border-2 border-gray-200 rounded-lg">
+                              <div>
+                                <div className="text-sm font-semibold">{expense.name}</div>
+                                <div className="text-xs text-gray-600">
+                                  {formatCurrency(expense.amount, settings.primaryCurrency, settings.exchangeRate).primary} × {
+                                    expense.frequency === 'once' ? '1' :
+                                    expense.frequency === 'perDay' ? `${DATES.totalDays} days` :
+                                    expense.customCount
+                                  } × {settings.students + settings.mentors} people
+                                </div>
+                              </div>
+                              <div className="flex gap-1">
+                                <button
+                                  onClick={() => setEditingExpense(expense)}
+                                  className="p-1 hover:bg-gray-100 rounded"
+                                >
+                                  <Edit2 className="w-3 h-3 text-gray-600" />
+                                </button>
+                                <button
+                                  onClick={() => deleteCustomExpense(expense.id)}
+                                  className="p-1 hover:bg-red-100 rounded"
+                                >
+                                  <Trash2 className="w-3 h-3 text-red-600" />
+                                </button>
                               </div>
                             </div>
-                            <div className="flex gap-1">
-                              <button
-                                onClick={() => setEditingExpense(expense)}
-                                className="p-1 hover:bg-gray-100 rounded"
-                              >
-                                <Edit2 className="w-3 h-3 text-gray-600" />
-                              </button>
-                              <button
-                                onClick={() => deleteCustomExpense(expense.id)}
-                                className="p-1 hover:bg-red-100 rounded"
-                              >
-                                <Trash2 className="w-3 h-3 text-red-600" />
-                              </button>
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    ))}
-                  </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
                   <button
                     onClick={addCustomExpense}
                     className="w-full px-3 py-1.5 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition text-xs flex items-center justify-center gap-1"
                   >
                     <Plus className="w-3 h-3" />
-                    Add Expense
+                    Add Custom Expense
                   </button>
-                  {customExpensesCost > 0 && (
-                    <div className="mt-3 p-2 bg-gray-50 rounded-lg text-xs">
-                      <div className="font-semibold text-gray-900">
-                        Total: {formatCurrency(customExpensesCost, settings.primaryCurrency, settings.exchangeRate).primary}
-                      </div>
-                    </div>
-                  )}
                 </div>
               )}
             </div>
           </div>
 
-          {/* Right Column: Summary */}
+          {/* Right Column: Breakdown */}
           <div className="space-y-3">
-            <div className="bg-white rounded-xl shadow-sm p-4 sticky top-4">
+            <div className="bg-white rounded-xl shadow-sm p-4">
               <h2 className="text-lg font-bold mb-3 flex items-center gap-2">
-                <DollarSign className="w-4 h-4" />
-                Summary
+                <TrendingUp className="w-5 h-5 text-blue-500" />
+                Cost Breakdown
               </h2>
               
-              <div className="space-y-2">
-                <div className="flex items-center gap-2 text-gray-600 text-sm">
-                  <Users className="w-3 h-3" />
-                  <span className="text-xs">
-                    {settings.students} students + {settings.mentors} mentors
-                  </span>
+              <div className="space-y-2 text-sm">
+                <div className="flex justify-between pb-2 border-b">
+                  <span className="text-gray-600">Hotel</span>
+                  <span className="font-medium">{formatCurrency(hotelCost.total, settings.primaryCurrency, settings.exchangeRate).primary}</span>
                 </div>
                 
-                <div className="pt-2 border-t space-y-1.5">
-                  <div>
-                    <div className="flex justify-between text-xs">
-                      <span className="text-gray-600">Hotel:</span>
-                      <span className="font-medium">{formatCurrency(hotelCost.total, settings.primaryCurrency, settings.exchangeRate).primary}</span>
-                    </div>
-                    <div className="text-xs text-gray-500 text-right">{formatCurrency(hotelCost.total, settings.primaryCurrency, settings.exchangeRate).secondary}</div>
+                {flightsCost > 0 && (
+                  <div className="flex justify-between pb-2 border-b">
+                    <span className="text-gray-600">Flights</span>
+                    <span className="font-medium">{formatCurrency(flightsCost, settings.primaryCurrency, settings.exchangeRate).primary}</span>
                   </div>
-                  {includeTransport && (
-                    <div>
-                      <div className="flex justify-between text-xs">
-                        <span className="text-gray-600">Transport:</span>
-                        <span className="font-medium">{formatCurrency(transportCost, settings.primaryCurrency, settings.exchangeRate).primary}</span>
-                      </div>
-                      <div className="text-xs text-gray-500 text-right">{formatCurrency(transportCost, settings.primaryCurrency, settings.exchangeRate).secondary}</div>
-                    </div>
-                  )}
-                  {mealCost > 0 && (
-                    <div>
-                      <div className="flex justify-between text-xs">
-                        <span className="text-gray-600">Meals:</span>
-                        <span className="font-medium">{formatCurrency(mealCost, settings.primaryCurrency, settings.exchangeRate).primary}</span>
-                      </div>
-                      <div className="text-xs text-gray-500 text-right">{formatCurrency(mealCost, settings.primaryCurrency, settings.exchangeRate).secondary}</div>
-                    </div>
-                  )}
-                  <div>
-                    <div className="flex justify-between text-xs">
-                      <span className="text-gray-600">Activities:</span>
-                      <span className="font-medium">{formatCurrency(activitiesCost, settings.primaryCurrency, settings.exchangeRate).primary}</span>
-                    </div>
-                    <div className="text-xs text-gray-500 text-right">{formatCurrency(activitiesCost, settings.primaryCurrency, settings.exchangeRate).secondary}</div>
-                  </div>
-                  {flightsCost > 0 && (
-                    <div>
-                      <div className="flex justify-between text-xs">
-                        <span className="text-gray-600">Flights:</span>
-                        <span className="font-medium">{formatCurrency(flightsCost, settings.primaryCurrency, settings.exchangeRate).primary}</span>
-                      </div>
-                      <div className="text-xs text-gray-500 text-right">{formatCurrency(flightsCost, settings.primaryCurrency, settings.exchangeRate).secondary}</div>
-                    </div>
-                  )}
-                  {customExpensesCost > 0 && (
-                    <div>
-                      <div className="flex justify-between text-xs">
-                        <span className="text-gray-600">Custom:</span>
-                        <span className="font-medium">{formatCurrency(customExpensesCost, settings.primaryCurrency, settings.exchangeRate).primary}</span>
-                      </div>
-                      <div className="text-xs text-gray-500 text-right">{formatCurrency(customExpensesCost, settings.primaryCurrency, settings.exchangeRate).secondary}</div>
-                    </div>
-                  )}
-                </div>
-                
-                <div className="pt-2 border-t">
-                  <div className="flex justify-between items-center mb-1">
-                    <span className="font-semibold text-sm text-gray-900">Total Cost:</span>
-                    <div className="text-right">
-                      <div className="font-bold text-base text-gray-900">
-                        {formatCurrency(totalCost, settings.primaryCurrency, settings.exchangeRate).primary}
-                      </div>
-                      <div className="text-xs text-gray-500">
-                        {formatCurrency(totalCost, settings.primaryCurrency, settings.exchangeRate).secondary}
-                      </div>
-                    </div>
-                  </div>
-                  <div className="text-xs text-gray-500">
-                    {formatCurrency(costPerStudent, settings.primaryCurrency, settings.exchangeRate).primary} per student
-                  </div>
-                </div>
-                
-                <div className="pt-2 border-t">
-                  <div className="flex justify-between items-center mb-1">
-                    <span className="font-semibold text-sm text-gray-900">Revenue:</span>
-                    <div className="text-right">
-                      <div className="font-bold text-base text-green-600">
-                        {formatCurrency(totalRevenue, settings.primaryCurrency, settings.exchangeRate).primary}
-                      </div>
-                      <div className="text-xs text-gray-500">
-                        {formatCurrency(totalRevenue, settings.primaryCurrency, settings.exchangeRate).secondary}
-                      </div>
-                    </div>
-                  </div>
-                  <div className="text-xs text-gray-500">
-                    {settings.students} × {formatCurrency(settings.pricePerStudent, settings.primaryCurrency, settings.exchangeRate).primary}
-                  </div>
-                </div>
-
-                {settings.taxPercent > 0 && (
-                  <>
-                    <div className="pt-2 border-t bg-red-50 -mx-4 px-4 py-2 rounded">
-                      <div className="flex justify-between items-center mb-1">
-                        <span className="font-semibold text-sm text-gray-900 flex items-center gap-1">
-                          <Percent className="w-3 h-3" />
-                          Tax ({settings.taxPercent}%):
-                        </span>
-                        <div className="text-right">
-                          <div className="font-bold text-base text-red-600">
-                            -{formatCurrency(taxOnRevenue, settings.primaryCurrency, settings.exchangeRate).primary}
-                          </div>
-                          <div className="text-xs text-gray-500">
-                            {formatCurrency(taxOnRevenue, settings.primaryCurrency, settings.exchangeRate).secondary}
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="pt-2 border-t">
-                      <div className="flex justify-between items-center mb-1">
-                        <span className="font-semibold text-sm text-gray-900">After tax:</span>
-                        <div className="text-right">
-                          <div className="font-bold text-base text-blue-600">
-                            {formatCurrency(revenueAfterTax, settings.primaryCurrency, settings.exchangeRate).primary}
-                          </div>
-                          <div className="text-xs text-gray-500">
-                            {formatCurrency(revenueAfterTax, settings.primaryCurrency, settings.exchangeRate).secondary}
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  </>
                 )}
                 
-                <div className="pt-2 border-t bg-gradient-to-r from-blue-50 to-purple-50 -mx-4 -mb-4 px-4 py-3 rounded-b-xl">
-                  <div className="flex justify-between items-center mb-1">
-                    <span className="font-bold text-sm text-gray-900 flex items-center gap-1">
-                      <TrendingUp className="w-3 h-3" />
-                      Gross Profit:
-                    </span>
-                    <div className="text-right">
-                      <div className={`font-bold text-lg ${grossProfit >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                        {grossProfit >= 0 ? '+' : ''}{formatCurrency(grossProfit, settings.primaryCurrency, settings.exchangeRate).primary}
-                      </div>
-                      <div className="text-xs text-gray-500">
-                        {formatCurrency(grossProfit, settings.primaryCurrency, settings.exchangeRate).secondary}
-                      </div>
-                    </div>
+                {mentorMealCost > 0 && (
+                  <div className="flex justify-between pb-2 border-b">
+                    <span className="text-gray-600">Mentor Meals</span>
+                    <span className="font-medium">{formatCurrency(mentorMealCost, settings.primaryCurrency, settings.exchangeRate).primary}</span>
                   </div>
-                  <div className="flex justify-between text-xs mb-2">
-                    <span className="text-gray-600">Margin:</span>
-                    <span className={`font-medium ${marginPercent >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                      {marginPercent.toFixed(1)}%
-                    </span>
+                )}
+                
+                {transportCost > 0 && (
+                  <div className="flex justify-between pb-2 border-b">
+                    <span className="text-gray-600">Transport</span>
+                    <span className="font-medium">{formatCurrency(transportCost, settings.primaryCurrency, settings.exchangeRate).primary}</span>
                   </div>
+                )}
+                
+                {mealCost > 0 && (
+                  <div className="flex justify-between pb-2 border-b">
+                    <span className="text-gray-600">Student Meals</span>
+                    <span className="font-medium">{formatCurrency(mealCost, settings.primaryCurrency, settings.exchangeRate).primary}</span>
+                  </div>
+                )}
+                
+                {activitiesCost > 0 && (
+                  <div className="flex justify-between pb-2 border-b">
+                    <span className="text-gray-600">Activities</span>
+                    <span className="font-medium">{formatCurrency(activitiesCost, settings.primaryCurrency, settings.exchangeRate).primary}</span>
+                  </div>
+                )}
+                
+                {customExpensesCost > 0 && (
+                  <div className="flex justify-between pb-2 border-b">
+                    <span className="text-gray-600">Custom Expenses</span>
+                    <span className="font-medium">{formatCurrency(customExpensesCost, settings.primaryCurrency, settings.exchangeRate).primary}</span>
+                  </div>
+                )}
+                
+                <div className="flex justify-between pt-2 text-lg font-bold">
+                  <span>Total Cost</span>
+                  <span className="text-orange-600">{formatCurrency(totalCost, settings.primaryCurrency, settings.exchangeRate).primary}</span>
+                </div>
+              </div>
+            </div>
 
-                  <div className="border-t pt-2 mt-2">
-                    <div className="text-xs text-gray-700 mb-1 font-semibold">Distribution (4 shares):</div>
-                    <div className="space-y-1 text-xs">
-                      <div className="flex justify-between">
-                        <span>Ментор:</span>
-                        <span className="font-medium text-green-600">{formatCurrency(netMentor, settings.primaryCurrency, settings.exchangeRate).primary}</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span>Аяжан:</span>
-                        <span className="font-medium text-green-600">{formatCurrency(netAyazhan, settings.primaryCurrency, settings.exchangeRate).primary}</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span>Бекс:</span>
-                        <span className="font-medium text-green-600">{formatCurrency(netBeks, settings.primaryCurrency, settings.exchangeRate).primary}</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span>Tair:</span>
-                        <span className="font-medium text-green-600">{formatCurrency(netTair, settings.primaryCurrency, settings.exchangeRate).primary}</span>
-                      </div>
-                    </div>
-                    <div className="border-t mt-2 pt-2">
-                      <div className="flex justify-between font-bold text-sm">
-                        <span>Net Profit:</span>
-                        <span className={netProfit >= 0 ? 'text-green-600' : 'text-red-600'}>
-                          {formatCurrency(netProfit, settings.primaryCurrency, settings.exchangeRate).primary}
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-                  
-                  {settings.pricePerStudent === 0 && (
-                    <div className="mt-3 p-2 bg-yellow-50 border border-yellow-200 rounded-lg">
-                      <div className="text-xs text-yellow-700 font-medium mb-0.5">
-                        💡 Set student price
-                      </div>
-                      <div className="text-xs text-yellow-600">
-                        Min: {formatCurrency(Math.ceil(totalCost / settings.students), settings.primaryCurrency, settings.exchangeRate).primary}
-                      </div>
-                    </div>
-                  )}
+            <div className="bg-gradient-to-br from-green-50 to-blue-50 rounded-xl shadow-sm p-4 border-2 border-green-200">
+              <h2 className="text-lg font-bold mb-3 flex items-center gap-2">
+                <PieChart className="w-5 h-5 text-green-600" />
+                Margin Distribution
+              </h2>
+              
+              <div className="space-y-2 text-sm">
+                <div className="flex justify-between pb-2 border-b border-green-200">
+                  <span className="font-medium">Ментор ({marginDistribution.mentor}%)</span>
+                  <span className="font-bold text-green-600">{formatCurrency(netMentor, settings.primaryCurrency, settings.exchangeRate).primary}</span>
+                </div>
+                
+                <div className="flex justify-between pb-2 border-b border-green-200">
+                  <span className="font-medium">Аяжан ({marginDistribution.ayazhan}%)</span>
+                  <span className="font-bold text-green-600">{formatCurrency(netAyazhan, settings.primaryCurrency, settings.exchangeRate).primary}</span>
+                </div>
+                
+                <div className="flex justify-between pb-2 border-b border-green-200">
+                  <span className="font-medium">Бекс ({marginDistribution.beks}%)</span>
+                  <span className="font-bold text-green-600">{formatCurrency(netBeks, settings.primaryCurrency, settings.exchangeRate).primary}</span>
+                </div>
+                
+                <div className="flex justify-between pb-2 border-b border-green-200">
+                  <span className="font-medium">Tair ({marginDistribution.tair}%)</span>
+                  <span className="font-bold text-green-600">{formatCurrency(netTair, settings.primaryCurrency, settings.exchangeRate).primary}</span>
                 </div>
               </div>
             </div>
