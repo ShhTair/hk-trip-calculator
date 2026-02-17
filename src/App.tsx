@@ -78,16 +78,30 @@ const DATES = {
 
 // Convert HKD (stored) to display currency
 const toDisplayCurrency = (hkdAmount: number, settings: Settings): number => {
-  return settings.primaryCurrency === 'KZT' 
+  const result = settings.primaryCurrency === 'KZT' 
     ? hkdAmount * settings.exchangeRate 
     : hkdAmount;
+  
+  // Debug logging (can be removed after verification)
+  if (hkdAmount > 0 && hkdAmount < 100000) {
+    console.log(`💵 toDisplayCurrency: ${hkdAmount} HKD → ${result.toFixed(2)} ${settings.primaryCurrency}`);
+  }
+  
+  return result;
 };
 
 // Convert display currency back to HKD (for storage)
 const toHKD = (displayAmount: number, settings: Settings): number => {
-  return settings.primaryCurrency === 'KZT' 
+  const result = settings.primaryCurrency === 'KZT' 
     ? displayAmount / settings.exchangeRate 
     : displayAmount;
+  
+  // Debug logging (can be removed after verification)
+  if (displayAmount > 0 && displayAmount < 1000000) {
+    console.log(`💰 toHKD: ${displayAmount} ${settings.primaryCurrency} → ${result.toFixed(2)} HKD`);
+  }
+  
+  return result;
 };
 
 // Get currency symbol
@@ -273,6 +287,9 @@ function App() {
   // Currency converter state
   const [converterHkd, setConverterHkd] = useState('');
   const [converterKzt, setConverterKzt] = useState('');
+  
+  // Currency version - forces inputs to re-render when currency changes
+  const [currencyVersion, setCurrencyVersion] = useState(0);
 
   // Auto-save to localStorage
   useEffect(() => { saveToStorage('hk-trip-settings', settings); }, [settings]);
@@ -296,10 +313,16 @@ function App() {
   };
 
   const toggleCurrency = () => {
+    const newCurrency = settings.primaryCurrency === 'HKD' ? 'KZT' : 'HKD';
+    console.log(`🔄 Currency toggle: ${settings.primaryCurrency} → ${newCurrency}`);
+    console.log(`📊 Exchange rate: 1 HKD = ${settings.exchangeRate} KZT`);
+    console.log(`🔑 Currency version: ${currencyVersion} → ${currencyVersion + 1}`);
+    
     setSettings(prev => ({
       ...prev,
-      primaryCurrency: prev.primaryCurrency === 'HKD' ? 'KZT' : 'HKD'
+      primaryCurrency: newCurrency
     }));
+    setCurrencyVersion(v => v + 1); // Force all currency inputs to re-render
   };
 
   const handleConverterHkdChange = (value: string) => {
@@ -890,6 +913,7 @@ function App() {
                   Price per student ({getCurrencySymbol(settings.primaryCurrency)})
                 </label>
                 <input
+                  key={`price-per-student-${currencyVersion}`}
                   type="number"
                   value={toDisplayCurrency(settings.pricePerStudent, settings)}
                   onChange={(e) => {
@@ -1147,6 +1171,7 @@ function App() {
                                 className="px-2 py-1 border border-gray-300 rounded text-sm"
                               />
                               <input
+                                key={`flight-price-${currencyVersion}`}
                                 type="number"
                                 value={toDisplayCurrency(editingFlight.price, settings)}
                                 onChange={(e) => {
@@ -1250,6 +1275,7 @@ function App() {
                       <div>
                         <label className="block text-xs text-gray-600 mb-1">Cost/meal ({getCurrencySymbol(settings.primaryCurrency)})</label>
                         <input
+                          key={`mentor-meal-cost-${currencyVersion}`}
                           type="number"
                           value={toDisplayCurrency(settings.mentorCostPerMeal, settings)}
                           onChange={(e) => {
@@ -1306,6 +1332,7 @@ function App() {
                             />
                             <div className="grid grid-cols-2 gap-2">
                               <input
+                                key={`hotel-pair-${currencyVersion}`}
                                 type="number"
                                 value={toDisplayCurrency(editingHotel.pricePerPair, settings)}
                                 onChange={(e) => {
@@ -1317,6 +1344,7 @@ function App() {
                                 className="px-2 py-1 border border-gray-300 rounded text-sm"
                               />
                               <input
+                                key={`hotel-solo-${currencyVersion}`}
                                 type="number"
                                 value={toDisplayCurrency(editingHotel.pricePerPerson, settings)}
                                 onChange={(e) => {
@@ -1495,6 +1523,7 @@ function App() {
                     <div>
                       <label className="block text-xs text-gray-600 mb-1">Cost per meal ({getCurrencySymbol(settings.primaryCurrency)})</label>
                       <input
+                        key={`student-meal-cost-${currencyVersion}`}
                         type="number"
                         value={toDisplayCurrency(costPerMeal, settings)}
                         onChange={(e) => {
@@ -1550,6 +1579,7 @@ function App() {
                               className="w-full px-2 py-1 border border-gray-300 rounded text-sm"
                             />
                             <input
+                              key={`activity-price-${currencyVersion}`}
                               type="number"
                               value={toDisplayCurrency(editingActivity.pricePerPerson, settings)}
                               onChange={(e) => {
@@ -1654,6 +1684,7 @@ function App() {
                                 className="w-full px-2 py-1 border border-gray-300 rounded text-sm"
                               />
                               <input
+                                key={`expense-amount-${currencyVersion}`}
                                 type="number"
                                 value={toDisplayCurrency(editingExpense.amount, settings)}
                                 onChange={(e) => {
