@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Calculator, Users, Hotel, Utensils, Sparkles, DollarSign, TrendingUp, Settings as SettingsIcon, MapPin, Plane, Plus, Edit2, Trash2, Camera, Percent, PieChart, ChevronDown, ChevronUp, ArrowLeftRight, X } from 'lucide-react';
+import { Calculator, Users, Hotel, Utensils, Sparkles, DollarSign, TrendingUp, Settings as SettingsIcon, MapPin, Plane, Plus, Edit2, Trash2, Camera, Percent, PieChart, ChevronDown, ChevronUp, X } from 'lucide-react';
 
 interface Settings {
   students: number;
@@ -7,7 +7,6 @@ interface Settings {
   pricePerStudent: number;
   taxPercent: number;
   exchangeRate: number;
-  primaryCurrency: 'HKD' | 'KZT';
   mentorMealsPerDay: number;
   mentorCostPerMeal: number;
 }
@@ -76,51 +75,12 @@ const DATES = {
   totalDays: 9
 };
 
-// Convert HKD (stored) to display currency
-const toDisplayCurrency = (hkdAmount: number, settings: Settings): number => {
-  const result = settings.primaryCurrency === 'KZT' 
-    ? hkdAmount * settings.exchangeRate 
-    : hkdAmount;
-  
-  // Debug logging (can be removed after verification)
-  if (hkdAmount > 0 && hkdAmount < 100000) {
-    console.log(`💵 toDisplayCurrency: ${hkdAmount} HKD → ${result.toFixed(2)} ${settings.primaryCurrency}`);
-  }
-  
-  return result;
-};
-
-// Convert display currency back to HKD (for storage)
-const toHKD = (displayAmount: number, settings: Settings): number => {
-  const result = settings.primaryCurrency === 'KZT' 
-    ? displayAmount / settings.exchangeRate 
-    : displayAmount;
-  
-  // Debug logging (can be removed after verification)
-  if (displayAmount > 0 && displayAmount < 1000000) {
-    console.log(`💰 toHKD: ${displayAmount} ${settings.primaryCurrency} → ${result.toFixed(2)} HKD`);
-  }
-  
-  return result;
-};
-
-// Get currency symbol
-const getCurrencySymbol = (currency: 'HKD' | 'KZT'): string => {
-  return currency === 'KZT' ? '₸' : 'HKD';
-};
-
-const formatCurrency = (amount: number, currency: 'HKD' | 'KZT', exchangeRate: number) => {
-  if (currency === 'HKD') {
-    return {
-      primary: amount.toLocaleString('en-US', { maximumFractionDigits: 2 }) + ' HKD',
-      secondary: '₸' + (amount * exchangeRate).toLocaleString('en-US', { maximumFractionDigits: 0 })
-    };
-  } else {
-    return {
-      primary: '₸' + amount.toLocaleString('en-US', { maximumFractionDigits: 0 }),
-      secondary: (amount / exchangeRate).toLocaleString('en-US', { maximumFractionDigits: 2 }) + ' HKD'
-    };
-  }
+// Simple price formatter - shows HKD with KZT below
+const formatPrice = (hkdAmount: number, exchangeRate: number) => {
+  return {
+    hkd: hkdAmount.toLocaleString('en-US', { maximumFractionDigits: 2 }) + ' HKD',
+    kzt: '₸' + (hkdAmount * exchangeRate).toLocaleString('en-US', { maximumFractionDigits: 0 })
+  };
 };
 
 const INITIAL_HOTELS: Hotel[] = [
@@ -223,7 +183,6 @@ function App() {
     pricePerStudent: 0,
     taxPercent: 3,
     exchangeRate: 59,
-    primaryCurrency: 'HKD' as const,
     mentorMealsPerDay: 0,
     mentorCostPerMeal: 100
   }));
@@ -264,7 +223,6 @@ function App() {
 
   const [mealsPerDay, setMealsPerDay] = useState(() => loadFromStorage('hk-trip-meals-per-day', 0));
   const [costPerMeal, setCostPerMeal] = useState(() => loadFromStorage('hk-trip-cost-per-meal', 100));
-  const [includeMentorMeals, setIncludeMentorMeals] = useState(() => loadFromStorage('hk-trip-include-mentor-meals', true));
 
   const [customExpenses, setCustomExpenses] = useState<CustomExpense[]>(() => loadFromStorage('hk-trip-custom-expenses', []));
   const [editingExpense, setEditingExpense] = useState<CustomExpense | null>(null);
@@ -272,7 +230,6 @@ function App() {
   const [includeTransport, setIncludeTransport] = useState(() => loadFromStorage('hk-trip-include-transport', true));
   const [showSettings, setShowSettings] = useState(false);
   const [showBreakdown, setShowBreakdown] = useState(false);
-  const [showConverter, setShowConverter] = useState(false);
   
   // Accordion states
   const [accordionState, setAccordionState] = useState(() => loadFromStorage('hk-trip-accordion', {
@@ -284,13 +241,6 @@ function App() {
     customExpenses: true
   }));
 
-  // Currency converter state
-  const [converterHkd, setConverterHkd] = useState('');
-  const [converterKzt, setConverterKzt] = useState('');
-  
-  // Currency version - forces inputs to re-render when currency changes
-  const [currencyVersion, setCurrencyVersion] = useState(0);
-
   // Auto-save to localStorage
   useEffect(() => { saveToStorage('hk-trip-settings', settings); }, [settings]);
   useEffect(() => { saveToStorage('hk-trip-margin', marginDistribution); }, [marginDistribution]);
@@ -301,7 +251,6 @@ function App() {
   useEffect(() => { saveToStorage('hk-trip-flights', flights); }, [flights]);
   useEffect(() => { saveToStorage('hk-trip-meals-per-day', mealsPerDay); }, [mealsPerDay]);
   useEffect(() => { saveToStorage('hk-trip-cost-per-meal', costPerMeal); }, [costPerMeal]);
-  useEffect(() => { saveToStorage('hk-trip-include-mentor-meals', includeMentorMeals); }, [includeMentorMeals]);
   useEffect(() => { saveToStorage('hk-trip-custom-expenses', customExpenses); }, [customExpenses]);
   useEffect(() => { saveToStorage('hk-trip-include-transport', includeTransport); }, [includeTransport]);
   useEffect(() => { saveToStorage('hk-trip-accordion', accordionState); }, [accordionState]);
@@ -310,31 +259,6 @@ function App() {
 
   const toggleAccordion = (section: keyof typeof accordionState) => {
     setAccordionState(prev => ({ ...prev, [section]: !prev[section] }));
-  };
-
-  const toggleCurrency = () => {
-    const newCurrency = settings.primaryCurrency === 'HKD' ? 'KZT' : 'HKD';
-    console.log(`🔄 Currency toggle: ${settings.primaryCurrency} → ${newCurrency}`);
-    console.log(`📊 Exchange rate: 1 HKD = ${settings.exchangeRate} KZT`);
-    console.log(`🔑 Currency version: ${currencyVersion} → ${currencyVersion + 1}`);
-    
-    setSettings(prev => ({
-      ...prev,
-      primaryCurrency: newCurrency
-    }));
-    setCurrencyVersion(v => v + 1); // Force all currency inputs to re-render
-  };
-
-  const handleConverterHkdChange = (value: string) => {
-    setConverterHkd(value);
-    const num = parseFloat(value) || 0;
-    setConverterKzt((num * settings.exchangeRate).toFixed(0));
-  };
-
-  const handleConverterKztChange = (value: string) => {
-    setConverterKzt(value);
-    const num = parseFloat(value) || 0;
-    setConverterHkd((num / settings.exchangeRate).toFixed(2));
   };
 
   // Auto-calculate Tair's share to ensure 100% total
@@ -555,67 +479,6 @@ function App() {
 
   return (
     <div className="min-h-screen bg-gray-50 p-3 relative">
-      {/* Currency Converter Floating Panel */}
-      {showConverter && (
-        <div className="fixed top-20 right-4 z-40 bg-white rounded-xl shadow-2xl w-80 border-2 border-blue-200">
-          <div className="bg-gradient-to-r from-blue-500 to-blue-600 p-3 flex justify-between items-center rounded-t-xl">
-            <h2 className="text-lg font-bold text-white flex items-center gap-2">
-              <ArrowLeftRight className="w-5 h-5" />
-              💱 Converter
-            </h2>
-          </div>
-          
-          <div className="p-4 space-y-3">
-            <div>
-              <label className="text-xs font-medium text-gray-600 mb-1 block">HKD 💵</label>
-              <input
-                type="number"
-                value={converterHkd}
-                onChange={(e) => handleConverterHkdChange(e.target.value)}
-                placeholder="0.00"
-                step="0.01"
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-              />
-            </div>
-            
-            <div className="flex items-center justify-center">
-              <div className="bg-gray-100 rounded-full p-1.5">
-                <ArrowLeftRight className="w-4 h-4 text-gray-600" />
-              </div>
-            </div>
-            
-            <div>
-              <label className="text-xs font-medium text-gray-600 mb-1 block">KZT ₸</label>
-              <input
-                type="number"
-                value={converterKzt}
-                onChange={(e) => handleConverterKztChange(e.target.value)}
-                placeholder="0"
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-              />
-            </div>
-            
-            <div className="bg-blue-50 border border-blue-200 rounded-lg p-2">
-              <div className="text-xs text-gray-600 mb-1">Exchange Rate (editable)</div>
-              <div className="flex items-center gap-1">
-                <span className="text-sm font-medium">1 HKD =</span>
-                <input
-                  type="number"
-                  value={settings.exchangeRate}
-                  onChange={(e) => {
-                    const newRate = parseFloat(e.target.value) || 59;
-                    setSettings({ ...settings, exchangeRate: newRate });
-                  }}
-                  step="0.01"
-                  className="w-20 px-2 py-1 border border-blue-300 rounded text-sm font-bold text-blue-600 focus:ring-2 focus:ring-blue-500"
-                />
-                <span className="text-sm font-medium">KZT</span>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* Breakdown Modal */}
       {showBreakdown && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
@@ -639,11 +502,11 @@ function App() {
                 <h3 className="font-bold text-lg text-green-800 mb-2">💰 Revenue</h3>
                 <div className="text-sm space-y-1">
                   <div className="flex justify-between">
-                    <span>{settings.students} students × {formatCurrency(settings.pricePerStudent, settings.primaryCurrency, settings.exchangeRate).primary}</span>
-                    <span className="font-bold">{formatCurrency(totalRevenue, settings.primaryCurrency, settings.exchangeRate).primary}</span>
+                    <span>{settings.students} students × {formatPrice(settings.pricePerStudent, settings.exchangeRate).hkd}</span>
+                    <span className="font-bold">{formatPrice(totalRevenue, settings.exchangeRate).hkd}</span>
                   </div>
                   <div className="text-xs text-gray-600">
-                    ({formatCurrency(totalRevenue, settings.primaryCurrency, settings.exchangeRate).secondary})
+                    ({formatPrice(totalRevenue, settings.exchangeRate).kzt})
                   </div>
                 </div>
               </div>
@@ -655,16 +518,16 @@ function App() {
                   <div className="text-sm space-y-1">
                     <div className="flex justify-between">
                       <span>Revenue tax</span>
-                      <span className="font-bold text-red-600">-{formatCurrency(taxOnRevenue, settings.primaryCurrency, settings.exchangeRate).primary}</span>
+                      <span className="font-bold text-red-600">-{formatPrice(taxOnRevenue, settings.exchangeRate).hkd}</span>
                     </div>
                     <div className="text-xs text-gray-600">
-                      ({formatCurrency(taxOnRevenue, settings.primaryCurrency, settings.exchangeRate).secondary})
+                      ({formatPrice(taxOnRevenue, settings.exchangeRate).kzt})
                     </div>
                   </div>
                   <div className="mt-3 pt-3 border-t border-red-300">
                     <div className="flex justify-between font-bold">
                       <span>Revenue after tax</span>
-                      <span className="text-blue-600">{formatCurrency(revenueAfterTax, settings.primaryCurrency, settings.exchangeRate).primary}</span>
+                      <span className="text-blue-600">{formatPrice(revenueAfterTax, settings.exchangeRate).hkd}</span>
                     </div>
                   </div>
                 </div>
@@ -676,49 +539,49 @@ function App() {
                 <div className="text-sm space-y-2">
                   <div className="flex justify-between">
                     <span>• Hotel ({hotelCost.pairs} pairs + {hotelCost.singles} singles)</span>
-                    <span>{formatCurrency(hotelCost.total, settings.primaryCurrency, settings.exchangeRate).primary}</span>
+                    <span>{formatPrice(hotelCost.total, settings.exchangeRate).hkd}</span>
                   </div>
                   {flightsCost > 0 && (
                     <div className="flex justify-between">
                       <span>• Flights ({settings.mentors} mentors)</span>
-                      <span>{formatCurrency(flightsCost, settings.primaryCurrency, settings.exchangeRate).primary}</span>
+                      <span>{formatPrice(flightsCost, settings.exchangeRate).hkd}</span>
                     </div>
                   )}
                   {mentorMealCost > 0 && (
                     <div className="flex justify-between">
                       <span>• Mentor Meals ({settings.mentorMealsPerDay}/day × {settings.mentors} mentors × {DATES.totalDays} days)</span>
-                      <span>{formatCurrency(mentorMealCost, settings.primaryCurrency, settings.exchangeRate).primary}</span>
+                      <span>{formatPrice(mentorMealCost, settings.exchangeRate).hkd}</span>
                     </div>
                   )}
                   {transportCost > 0 && (
                     <div className="flex justify-between">
                       <span>• Transport (MTR + Ferry)</span>
-                      <span>{formatCurrency(transportCost, settings.primaryCurrency, settings.exchangeRate).primary}</span>
+                      <span>{formatPrice(transportCost, settings.exchangeRate).hkd}</span>
                     </div>
                   )}
                   {mealCost > 0 && (
                     <div className="flex justify-between">
                       <span>• Student Meals ({mealsPerDay}/day × {settings.students} students × {DATES.totalDays} days)</span>
-                      <span>{formatCurrency(mealCost, settings.primaryCurrency, settings.exchangeRate).primary}</span>
+                      <span>{formatPrice(mealCost, settings.exchangeRate).hkd}</span>
                     </div>
                   )}
                   {activitiesCost > 0 && (
                     <div className="flex justify-between">
                       <span>• Activities ({activities.filter(a => a.enabled).length} items)</span>
-                      <span>{formatCurrency(activitiesCost, settings.primaryCurrency, settings.exchangeRate).primary}</span>
+                      <span>{formatPrice(activitiesCost, settings.exchangeRate).hkd}</span>
                     </div>
                   )}
                   {customExpensesCost > 0 && (
                     <div className="flex justify-between">
                       <span>• Custom Expenses ({customExpenses.length} items)</span>
-                      <span>{formatCurrency(customExpensesCost, settings.primaryCurrency, settings.exchangeRate).primary}</span>
+                      <span>{formatPrice(customExpensesCost, settings.exchangeRate).hkd}</span>
                     </div>
                   )}
                 </div>
                 <div className="mt-3 pt-3 border-t border-orange-300">
                   <div className="flex justify-between font-bold">
                     <span>Total Costs</span>
-                    <span className="text-orange-600">{formatCurrency(totalCost, settings.primaryCurrency, settings.exchangeRate).primary}</span>
+                    <span className="text-orange-600">{formatPrice(totalCost, settings.exchangeRate).hkd}</span>
                   </div>
                 </div>
               </div>
@@ -732,11 +595,11 @@ function App() {
                   <div className="flex justify-between">
                     <span>Revenue after tax - Total costs</span>
                     <span className={`font-bold text-xl ${grossProfit >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                      {grossProfit >= 0 ? '+' : ''}{formatCurrency(grossProfit, settings.primaryCurrency, settings.exchangeRate).primary}
+                      {grossProfit >= 0 ? '+' : ''}{formatPrice(grossProfit, settings.exchangeRate).hkd}
                     </span>
                   </div>
                   <div className="text-xs text-gray-600">
-                    ({formatCurrency(grossProfit, settings.primaryCurrency, settings.exchangeRate).secondary})
+                    ({formatPrice(grossProfit, settings.exchangeRate).kzt})
                   </div>
                 </div>
               </div>
@@ -756,11 +619,11 @@ function App() {
                         <span className="text-gray-600">Tax: {taxConfig.mentor}%</span>
                       </div>
                       <div className="flex justify-between">
-                        <span>Share: {formatCurrency(marginMentor, settings.primaryCurrency, settings.exchangeRate).primary}</span>
+                        <span>Share: {formatPrice(marginMentor, settings.exchangeRate).hkd}</span>
                       </div>
                       <div className="flex justify-between">
-                        <span className="text-red-600">- Tax: {formatCurrency(taxOnMentorShare, settings.primaryCurrency, settings.exchangeRate).primary}</span>
-                        <span className="font-bold text-green-600">= {formatCurrency(netMentor, settings.primaryCurrency, settings.exchangeRate).primary}</span>
+                        <span className="text-red-600">- Tax: {formatPrice(taxOnMentorShare, settings.exchangeRate).hkd}</span>
+                        <span className="font-bold text-green-600">= {formatPrice(netMentor, settings.exchangeRate).hkd}</span>
                       </div>
                     </div>
 
@@ -770,11 +633,11 @@ function App() {
                         <span className="text-gray-600">Tax: {taxConfig.ayazhan}%</span>
                       </div>
                       <div className="flex justify-between">
-                        <span>Share: {formatCurrency(marginAyazhan, settings.primaryCurrency, settings.exchangeRate).primary}</span>
+                        <span>Share: {formatPrice(marginAyazhan, settings.exchangeRate).hkd}</span>
                       </div>
                       <div className="flex justify-between">
-                        <span className="text-red-600">- Tax: {formatCurrency(taxOnAyazhanShare, settings.primaryCurrency, settings.exchangeRate).primary}</span>
-                        <span className="font-bold text-green-600">= {formatCurrency(netAyazhan, settings.primaryCurrency, settings.exchangeRate).primary}</span>
+                        <span className="text-red-600">- Tax: {formatPrice(taxOnAyazhanShare, settings.exchangeRate).hkd}</span>
+                        <span className="font-bold text-green-600">= {formatPrice(netAyazhan, settings.exchangeRate).hkd}</span>
                       </div>
                     </div>
 
@@ -784,11 +647,11 @@ function App() {
                         <span className="text-gray-600">Tax: {taxConfig.beks}%</span>
                       </div>
                       <div className="flex justify-between">
-                        <span>Share: {formatCurrency(marginBeks, settings.primaryCurrency, settings.exchangeRate).primary}</span>
+                        <span>Share: {formatPrice(marginBeks, settings.exchangeRate).hkd}</span>
                       </div>
                       <div className="flex justify-between">
-                        <span className="text-red-600">- Tax: {formatCurrency(taxOnBeksShare, settings.primaryCurrency, settings.exchangeRate).primary}</span>
-                        <span className="font-bold text-green-600">= {formatCurrency(netBeks, settings.primaryCurrency, settings.exchangeRate).primary}</span>
+                        <span className="text-red-600">- Tax: {formatPrice(taxOnBeksShare, settings.exchangeRate).hkd}</span>
+                        <span className="font-bold text-green-600">= {formatPrice(netBeks, settings.exchangeRate).hkd}</span>
                       </div>
                     </div>
 
@@ -798,11 +661,11 @@ function App() {
                         <span className="text-gray-600">Tax: {taxConfig.tair}%</span>
                       </div>
                       <div className="flex justify-between">
-                        <span>Share: {formatCurrency(marginTair, settings.primaryCurrency, settings.exchangeRate).primary}</span>
+                        <span>Share: {formatPrice(marginTair, settings.exchangeRate).hkd}</span>
                       </div>
                       <div className="flex justify-between">
-                        <span className="text-red-600">- Tax: {formatCurrency(taxOnTairShare, settings.primaryCurrency, settings.exchangeRate).primary}</span>
-                        <span className="font-bold text-green-600">= {formatCurrency(netTair, settings.primaryCurrency, settings.exchangeRate).primary}</span>
+                        <span className="text-red-600">- Tax: {formatPrice(taxOnTairShare, settings.exchangeRate).hkd}</span>
+                        <span className="font-bold text-green-600">= {formatPrice(netTair, settings.exchangeRate).hkd}</span>
                       </div>
                     </div>
                   </div>
@@ -810,7 +673,7 @@ function App() {
                   <div className="mt-3 pt-3 border-t border-purple-400">
                     <div className="flex justify-between font-bold">
                       <span>Total tax on shares</span>
-                      <span className="text-red-600">-{formatCurrency(totalTaxOnShares, settings.primaryCurrency, settings.exchangeRate).primary}</span>
+                      <span className="text-red-600">-{formatPrice(totalTaxOnShares, settings.exchangeRate).hkd}</span>
                     </div>
                   </div>
                 </div>
@@ -825,11 +688,11 @@ function App() {
                   <div className="flex justify-between">
                     <span className="font-bold">Total for distribution:</span>
                     <span className={`font-bold text-2xl ${netProfit >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                      {netProfit >= 0 ? '+' : ''}{formatCurrency(netProfit, settings.primaryCurrency, settings.exchangeRate).primary}
+                      {netProfit >= 0 ? '+' : ''}{formatPrice(netProfit, settings.exchangeRate).hkd}
                     </span>
                   </div>
                   <div className="text-sm text-gray-600">
-                    ({formatCurrency(netProfit, settings.primaryCurrency, settings.exchangeRate).secondary})
+                    ({formatPrice(netProfit, settings.exchangeRate).kzt})
                   </div>
                 </div>
               </div>
@@ -849,21 +712,24 @@ function App() {
                 <p className="text-gray-600 text-xs">📅 {DATES.start} → {DATES.end} ({DATES.totalNights} nights, {DATES.totalDays} days)</p>
               </div>
             </div>
-            <div className="flex gap-2">
-              <button
-                onClick={() => setShowConverter(true)}
-                className="px-3 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 transition text-sm flex items-center gap-2"
-              >
-                <ArrowLeftRight className="w-4 h-4" />
-                💱 Converter
-              </button>
-              <button
-                onClick={toggleCurrency}
-                className="px-3 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition text-sm flex items-center gap-2"
-              >
-                <ArrowLeftRight className="w-4 h-4" />
-                {settings.primaryCurrency === 'HKD' ? 'HKD 💵' : 'KZT ₸'}
-              </button>
+            <div className="flex gap-2 items-center">
+              <div className="bg-blue-50 border border-blue-200 rounded-lg px-3 py-2">
+                <div className="text-xs text-gray-600 mb-1">Exchange Rate</div>
+                <div className="flex items-center gap-1">
+                  <span className="text-sm font-medium">1 HKD =</span>
+                  <input
+                    type="number"
+                    value={settings.exchangeRate}
+                    onChange={(e) => {
+                      const newRate = parseFloat(e.target.value) || 59;
+                      setSettings({ ...settings, exchangeRate: newRate });
+                    }}
+                    step="0.01"
+                    className="w-16 px-2 py-1 border border-blue-300 rounded text-sm font-bold text-blue-600 focus:ring-2 focus:ring-blue-500"
+                  />
+                  <span className="text-sm font-medium">KZT</span>
+                </div>
+              </div>
               <button
                 onClick={() => setShowSettings(!showSettings)}
                 className="p-2 hover:bg-gray-100 rounded-lg transition"
@@ -910,23 +776,18 @@ function App() {
               
               <div>
                 <label className="block text-xs font-medium text-gray-700 mb-1">
-                  Price per student ({getCurrencySymbol(settings.primaryCurrency)})
+                  Price per student (HKD)
                 </label>
                 <input
-                  key={`price-per-student-${currencyVersion}`}
                   type="number"
-                  value={toDisplayCurrency(settings.pricePerStudent, settings)}
-                  onChange={(e) => {
-                    const displayValue = parseFloat(e.target.value) || 0;
-                    const hkdValue = toHKD(displayValue, settings);
-                    setSettings({ ...settings, pricePerStudent: hkdValue });
-                  }}
-                  placeholder={`Price (${getCurrencySymbol(settings.primaryCurrency)})`}
+                  value={settings.pricePerStudent}
+                  onChange={(e) => setSettings({ ...settings, pricePerStudent: parseFloat(e.target.value) || 0 })}
+                  placeholder="Price (HKD)"
                   className="w-full px-3 py-1.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
                 />
-                <p className="text-xs text-gray-500 mt-1">
-                  {formatCurrency(settings.pricePerStudent, settings.primaryCurrency, settings.exchangeRate).secondary}
-                </p>
+                <div className="text-xs text-gray-600 mt-1">
+                  ≈ {formatPrice(settings.pricePerStudent, settings.exchangeRate).kzt}
+                </div>
               </div>
 
               <div>
@@ -942,19 +803,6 @@ function App() {
                   className="w-full px-3 py-1.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
                 />
                 <p className="text-xs text-gray-500 mt-1">Deducted from revenue</p>
-              </div>
-
-              <div>
-                <label className="block text-xs font-medium text-gray-700 mb-1">
-                  Exchange Rate (1 HKD =)
-                </label>
-                <input
-                  type="number"
-                  value={settings.exchangeRate}
-                  onChange={(e) => setSettings({ ...settings, exchangeRate: parseFloat(e.target.value) || 1 })}
-                  className="w-full px-3 py-1.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
-                />
-                <p className="text-xs text-gray-500 mt-1">KZT per 1 HKD</p>
               </div>
             </div>
 
@@ -1096,28 +944,28 @@ function App() {
 
             <div className="bg-white rounded-lg p-3 shadow-sm">
               <div className="text-xs text-gray-500 uppercase mb-1">Cost/student</div>
-              <div className="text-base font-bold text-blue-600">{formatCurrency(costPerStudent, settings.primaryCurrency, settings.exchangeRate).primary}</div>
-              <div className="text-xs text-gray-600">{formatCurrency(costPerStudent, settings.primaryCurrency, settings.exchangeRate).secondary}</div>
+              <div className="text-base font-bold text-blue-600">{formatPrice(costPerStudent, settings.exchangeRate).hkd}</div>
+              <div className="text-xs text-gray-600">{formatPrice(costPerStudent, settings.exchangeRate).kzt}</div>
             </div>
 
             <div className="bg-white rounded-lg p-3 shadow-sm">
               <div className="text-xs text-gray-500 uppercase mb-1">Revenue</div>
-              <div className="text-base font-bold text-green-600">{formatCurrency(totalRevenue, settings.primaryCurrency, settings.exchangeRate).primary}</div>
-              <div className="text-xs text-gray-600">{formatCurrency(totalRevenue, settings.primaryCurrency, settings.exchangeRate).secondary}</div>
+              <div className="text-base font-bold text-green-600">{formatPrice(totalRevenue, settings.exchangeRate).hkd}</div>
+              <div className="text-xs text-gray-600">{formatPrice(totalRevenue, settings.exchangeRate).kzt}</div>
             </div>
 
             {settings.taxPercent > 0 && (
               <div className="bg-white rounded-lg p-3 shadow-sm border-2 border-red-200">
                 <div className="text-xs text-gray-500 uppercase mb-1">Tax {settings.taxPercent}%</div>
-                <div className="text-base font-bold text-red-600">-{formatCurrency(taxOnRevenue, settings.primaryCurrency, settings.exchangeRate).primary}</div>
-                <div className="text-xs text-gray-600">{formatCurrency(taxOnRevenue, settings.primaryCurrency, settings.exchangeRate).secondary}</div>
+                <div className="text-base font-bold text-red-600">-{formatPrice(taxOnRevenue, settings.exchangeRate).hkd}</div>
+                <div className="text-xs text-gray-600">{formatPrice(taxOnRevenue, settings.exchangeRate).kzt}</div>
               </div>
             )}
 
             <div className="bg-white rounded-lg p-3 shadow-sm">
               <div className="text-xs text-gray-500 uppercase mb-1">Margin</div>
               <div className={`text-base font-bold ${grossProfit >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                {grossProfit >= 0 ? '+' : ''}{formatCurrency(grossProfit, settings.primaryCurrency, settings.exchangeRate).primary}
+                {grossProfit >= 0 ? '+' : ''}{formatPrice(grossProfit, settings.exchangeRate).hkd}
               </div>
               <div className="text-xs text-gray-600">{marginPercent.toFixed(1)}%</div>
             </div>
@@ -1125,7 +973,7 @@ function App() {
             <div className="bg-white rounded-lg p-3 shadow-sm border-2 border-green-200">
               <div className="text-xs text-gray-500 uppercase mb-1">Net Profit</div>
               <div className={`text-base font-bold ${netProfit >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                {netProfit >= 0 ? '+' : ''}{formatCurrency(netProfit, settings.primaryCurrency, settings.exchangeRate).primary}
+                {netProfit >= 0 ? '+' : ''}{formatPrice(netProfit, settings.exchangeRate).hkd}
               </div>
               <div className="text-xs text-gray-600">After all tax</div>
             </div>
@@ -1170,18 +1018,18 @@ function App() {
                                 placeholder="Route"
                                 className="px-2 py-1 border border-gray-300 rounded text-sm"
                               />
-                              <input
-                                key={`flight-price-${currencyVersion}`}
-                                type="number"
-                                value={toDisplayCurrency(editingFlight.price, settings)}
-                                onChange={(e) => {
-                                  const displayValue = parseFloat(e.target.value) || 0;
-                                  const hkdValue = toHKD(displayValue, settings);
-                                  setEditingFlight({ ...editingFlight, price: hkdValue });
-                                }}
-                                placeholder={`Price (${getCurrencySymbol(settings.primaryCurrency)})`}
-                                className="px-2 py-1 border border-gray-300 rounded text-sm"
-                              />
+                              <div>
+                                <input
+                                  type="number"
+                                  value={editingFlight.price}
+                                  onChange={(e) => setEditingFlight({ ...editingFlight, price: parseFloat(e.target.value) || 0 })}
+                                  placeholder="Price (HKD)"
+                                  className="w-full px-2 py-1 border border-gray-300 rounded text-sm"
+                                />
+                                <div className="text-xs text-gray-600 mt-1">
+                                  ≈ {formatPrice(editingFlight.price, settings.exchangeRate).kzt}
+                                </div>
+                              </div>
                             </div>
                             <input
                               type="text"
@@ -1212,8 +1060,13 @@ function App() {
                               <div className="text-xs text-gray-600 mt-1">{flight.route}</div>
                               {flight.notes && <div className="text-xs text-gray-500 mt-1">{flight.notes}</div>}
                               {flight.price > 0 && (
-                                <div className="text-xs text-blue-600 mt-1 font-medium">
-                                  Total: {formatCurrency(flight.price * settings.mentors, settings.primaryCurrency, settings.exchangeRate).primary} ({settings.mentors} × {formatCurrency(flight.price, settings.primaryCurrency, settings.exchangeRate).primary})
+                                <div className="text-xs mt-1">
+                                  <div className="text-blue-600 font-medium">
+                                    Total: {formatPrice(flight.price * settings.mentors, settings.exchangeRate).hkd} ({settings.mentors} × {formatPrice(flight.price, settings.exchangeRate).hkd})
+                                  </div>
+                                  <div className="text-gray-600">
+                                    ≈ {formatPrice(flight.price * settings.mentors, settings.exchangeRate).kzt}
+                                  </div>
                                 </div>
                               )}
                             </div>
@@ -1246,10 +1099,10 @@ function App() {
                   {flightsCost > 0 && (
                     <div className="mt-3 p-2 bg-gray-50 rounded-lg text-xs">
                       <div className="font-semibold text-gray-900">
-                        Total flights: {formatCurrency(flightsCost, settings.primaryCurrency, settings.exchangeRate).primary}
+                        Total flights: {formatPrice(flightsCost, settings.exchangeRate).hkd}
                       </div>
                       <div className="text-gray-500 mt-0.5">
-                        {formatCurrency(flightsCost, settings.primaryCurrency, settings.exchangeRate).secondary}
+                        {formatPrice(flightsCost, settings.exchangeRate).kzt}
                       </div>
                     </div>
                   )}
@@ -1273,27 +1126,28 @@ function App() {
                         />
                       </div>
                       <div>
-                        <label className="block text-xs text-gray-600 mb-1">Cost/meal ({getCurrencySymbol(settings.primaryCurrency)})</label>
+                        <label className="block text-xs text-gray-600 mb-1">Cost/meal (HKD)</label>
                         <input
-                          key={`mentor-meal-cost-${currencyVersion}`}
                           type="number"
-                          value={toDisplayCurrency(settings.mentorCostPerMeal, settings)}
-                          onChange={(e) => {
-                            const displayValue = parseFloat(e.target.value) || 0;
-                            const hkdValue = toHKD(displayValue, settings);
-                            setSettings({ ...settings, mentorCostPerMeal: hkdValue });
-                          }}
-                          placeholder={`Cost (${getCurrencySymbol(settings.primaryCurrency)})`}
+                          value={settings.mentorCostPerMeal}
+                          onChange={(e) => setSettings({ ...settings, mentorCostPerMeal: parseFloat(e.target.value) || 0 })}
+                          placeholder="Cost (HKD)"
                           className="w-full px-2 py-1 border border-gray-300 rounded text-sm"
                         />
+                        <div className="text-xs text-gray-600 mt-1">
+                          ≈ {formatPrice(settings.mentorCostPerMeal, settings.exchangeRate).kzt}
+                        </div>
                       </div>
                     </div>
                     {mentorMealCost > 0 && (
                       <div className="mt-2 p-2 bg-blue-50 rounded text-xs">
                         <div className="font-semibold">
-                          Total: {formatCurrency(mentorMealCost, settings.primaryCurrency, settings.exchangeRate).primary}
+                          Total: {formatPrice(mentorMealCost, settings.exchangeRate).hkd}
                         </div>
-                        <div className="text-gray-600 text-xs">
+                        <div className="text-gray-600">
+                          ≈ {formatPrice(mentorMealCost, settings.exchangeRate).kzt}
+                        </div>
+                        <div className="text-gray-600 text-xs mt-1">
                           {settings.mentorMealsPerDay} meals/day × {settings.mentorCostPerMeal} HKD × {DATES.totalDays} days × {settings.mentors} mentors
                         </div>
                       </div>
@@ -1331,30 +1185,30 @@ function App() {
                               className="w-full px-2 py-1 border border-gray-300 rounded text-sm"
                             />
                             <div className="grid grid-cols-2 gap-2">
-                              <input
-                                key={`hotel-pair-${currencyVersion}`}
-                                type="number"
-                                value={toDisplayCurrency(editingHotel.pricePerPair, settings)}
-                                onChange={(e) => {
-                                  const displayValue = parseFloat(e.target.value) || 0;
-                                  const hkdValue = toHKD(displayValue, settings);
-                                  setEditingHotel({ ...editingHotel, pricePerPair: hkdValue });
-                                }}
-                                placeholder={`Price/pair (${getCurrencySymbol(settings.primaryCurrency)})`}
-                                className="px-2 py-1 border border-gray-300 rounded text-sm"
-                              />
-                              <input
-                                key={`hotel-solo-${currencyVersion}`}
-                                type="number"
-                                value={toDisplayCurrency(editingHotel.pricePerPerson, settings)}
-                                onChange={(e) => {
-                                  const displayValue = parseFloat(e.target.value) || 0;
-                                  const hkdValue = toHKD(displayValue, settings);
-                                  setEditingHotel({ ...editingHotel, pricePerPerson: hkdValue });
-                                }}
-                                placeholder={`Price/solo (${getCurrencySymbol(settings.primaryCurrency)})`}
-                                className="px-2 py-1 border border-gray-300 rounded text-sm"
-                              />
+                              <div>
+                                <input
+                                  type="number"
+                                  value={editingHotel.pricePerPair}
+                                  onChange={(e) => setEditingHotel({ ...editingHotel, pricePerPair: parseFloat(e.target.value) || 0 })}
+                                  placeholder="Price/pair (HKD)"
+                                  className="w-full px-2 py-1 border border-gray-300 rounded text-sm"
+                                />
+                                <div className="text-xs text-gray-600 mt-1">
+                                  ≈ {formatPrice(editingHotel.pricePerPair, settings.exchangeRate).kzt}
+                                </div>
+                              </div>
+                              <div>
+                                <input
+                                  type="number"
+                                  value={editingHotel.pricePerPerson}
+                                  onChange={(e) => setEditingHotel({ ...editingHotel, pricePerPerson: parseFloat(e.target.value) || 0 })}
+                                  placeholder="Price/solo (HKD)"
+                                  className="w-full px-2 py-1 border border-gray-300 rounded text-sm"
+                                />
+                                <div className="text-xs text-gray-600 mt-1">
+                                  ≈ {formatPrice(editingHotel.pricePerPerson, settings.exchangeRate).kzt}
+                                </div>
+                              </div>
                             </div>
                             <input
                               type="text"
@@ -1423,8 +1277,14 @@ function App() {
                               <div>
                                 <h3 className="font-bold text-sm">{hotel.name}</h3>
                                 <div className="text-xs text-gray-600 mt-1 space-y-0.5">
-                                  <div>Pair: {formatCurrency(hotel.pricePerPair, settings.primaryCurrency, settings.exchangeRate).primary}</div>
-                                  <div>Solo: {formatCurrency(hotel.pricePerPerson, settings.primaryCurrency, settings.exchangeRate).primary}</div>
+                                  <div>
+                                    <div>Pair: {formatPrice(hotel.pricePerPair, settings.exchangeRate).hkd}</div>
+                                    <div className="text-gray-500">≈ {formatPrice(hotel.pricePerPair, settings.exchangeRate).kzt}</div>
+                                  </div>
+                                  <div>
+                                    <div>Solo: {formatPrice(hotel.pricePerPerson, settings.exchangeRate).hkd}</div>
+                                    <div className="text-gray-500">≈ {formatPrice(hotel.pricePerPerson, settings.exchangeRate).kzt}</div>
+                                  </div>
                                 </div>
                               </div>
                             </div>
@@ -1483,7 +1343,10 @@ function App() {
                       <div>MTR/Buses: {TRANSPORT.mtr} HKD per person</div>
                       <div>Ferry: {TRANSPORT.ferry} HKD per person</div>
                       <div className="font-semibold pt-2 border-t">
-                        Total: {formatCurrency(transportCost, settings.primaryCurrency, settings.exchangeRate).primary}
+                        Total: {formatPrice(transportCost, settings.exchangeRate).hkd}
+                      </div>
+                      <div className="text-gray-500">
+                        ≈ {formatPrice(transportCost, settings.exchangeRate).kzt}
                       </div>
                       <div className="text-gray-500">
                         ({settings.students + settings.mentors} people × {TRANSPORT.mtr + TRANSPORT.ferry} HKD)
@@ -1521,26 +1384,27 @@ function App() {
                       />
                     </div>
                     <div>
-                      <label className="block text-xs text-gray-600 mb-1">Cost per meal ({getCurrencySymbol(settings.primaryCurrency)})</label>
+                      <label className="block text-xs text-gray-600 mb-1">Cost per meal (HKD)</label>
                       <input
-                        key={`student-meal-cost-${currencyVersion}`}
                         type="number"
-                        value={toDisplayCurrency(costPerMeal, settings)}
-                        onChange={(e) => {
-                          const displayValue = parseFloat(e.target.value) || 0;
-                          const hkdValue = toHKD(displayValue, settings);
-                          setCostPerMeal(hkdValue);
-                        }}
-                        placeholder={`Cost (${getCurrencySymbol(settings.primaryCurrency)})`}
+                        value={costPerMeal}
+                        onChange={(e) => setCostPerMeal(parseFloat(e.target.value) || 0)}
+                        placeholder="Cost (HKD)"
                         className="w-full px-2 py-1 border border-gray-300 rounded text-sm"
                       />
+                      <div className="text-xs text-gray-600 mt-1">
+                        ≈ {formatPrice(costPerMeal, settings.exchangeRate).kzt}
+                      </div>
                     </div>
                   </div>
                   
                   {mealCost > 0 && (
                     <div className="bg-gray-50 rounded-lg p-2 text-xs">
                       <div className="font-semibold">
-                        Total: {formatCurrency(mealCost, settings.primaryCurrency, settings.exchangeRate).primary}
+                        Total: {formatPrice(mealCost, settings.exchangeRate).hkd}
+                      </div>
+                      <div className="text-gray-500">
+                        ≈ {formatPrice(mealCost, settings.exchangeRate).kzt}
                       </div>
                       <div className="text-gray-500 mt-0.5">
                         {mealsPerDay} meals/day × {costPerMeal} HKD × {DATES.totalDays} days × {settings.students} students
@@ -1578,18 +1442,18 @@ function App() {
                               placeholder="Activity name"
                               className="w-full px-2 py-1 border border-gray-300 rounded text-sm"
                             />
-                            <input
-                              key={`activity-price-${currencyVersion}`}
-                              type="number"
-                              value={toDisplayCurrency(editingActivity.pricePerPerson, settings)}
-                              onChange={(e) => {
-                                const displayValue = parseFloat(e.target.value) || 0;
-                                const hkdValue = toHKD(displayValue, settings);
-                                setEditingActivity({ ...editingActivity, pricePerPerson: hkdValue });
-                              }}
-                              placeholder={`Price per person (${getCurrencySymbol(settings.primaryCurrency)})`}
-                              className="w-full px-2 py-1 border border-gray-300 rounded text-sm"
-                            />
+                            <div>
+                              <input
+                                type="number"
+                                value={editingActivity.pricePerPerson}
+                                onChange={(e) => setEditingActivity({ ...editingActivity, pricePerPerson: parseFloat(e.target.value) || 0 })}
+                                placeholder="Price per person (HKD)"
+                                className="w-full px-2 py-1 border border-gray-300 rounded text-sm"
+                              />
+                              <div className="text-xs text-gray-600 mt-1">
+                                ≈ {formatPrice(editingActivity.pricePerPerson, settings.exchangeRate).kzt}
+                              </div>
+                            </div>
                             <input
                               type="text"
                               value={editingActivity.notes}
@@ -1629,7 +1493,8 @@ function App() {
                             <div className="flex-1">
                               <div className="text-sm font-semibold">{activity.name}</div>
                               <div className="text-xs text-gray-600">
-                                {formatCurrency(activity.pricePerPerson, settings.primaryCurrency, settings.exchangeRate).primary}/person
+                                <div>{formatPrice(activity.pricePerPerson, settings.exchangeRate).hkd}/person</div>
+                                <div className="text-gray-500">≈ {formatPrice(activity.pricePerPerson, settings.exchangeRate).kzt}</div>
                               </div>
                               {activity.notes && <div className="text-xs text-gray-500 mt-1">{activity.notes}</div>}
                             </div>
@@ -1683,18 +1548,18 @@ function App() {
                                 placeholder="Expense name"
                                 className="w-full px-2 py-1 border border-gray-300 rounded text-sm"
                               />
-                              <input
-                                key={`expense-amount-${currencyVersion}`}
-                                type="number"
-                                value={toDisplayCurrency(editingExpense.amount, settings)}
-                                onChange={(e) => {
-                                  const displayValue = parseFloat(e.target.value) || 0;
-                                  const hkdValue = toHKD(displayValue, settings);
-                                  setEditingExpense({ ...editingExpense, amount: hkdValue });
-                                }}
-                                placeholder={`Amount (${getCurrencySymbol(settings.primaryCurrency)})`}
-                                className="w-full px-2 py-1 border border-gray-300 rounded text-sm"
-                              />
+                              <div>
+                                <input
+                                  type="number"
+                                  value={editingExpense.amount}
+                                  onChange={(e) => setEditingExpense({ ...editingExpense, amount: parseFloat(e.target.value) || 0 })}
+                                  placeholder="Amount (HKD)"
+                                  className="w-full px-2 py-1 border border-gray-300 rounded text-sm"
+                                />
+                                <div className="text-xs text-gray-600 mt-1">
+                                  ≈ {formatPrice(editingExpense.amount, settings.exchangeRate).kzt}
+                                </div>
+                              </div>
                               <select
                                 value={editingExpense.frequency}
                                 onChange={(e) => setEditingExpense({ ...editingExpense, frequency: e.target.value as any })}
@@ -1739,11 +1604,12 @@ function App() {
                               <div>
                                 <div className="text-sm font-semibold">{expense.name}</div>
                                 <div className="text-xs text-gray-600">
-                                  {formatCurrency(expense.amount, settings.primaryCurrency, settings.exchangeRate).primary} × {
+                                  <div>{formatPrice(expense.amount, settings.exchangeRate).hkd} × {
                                     expense.frequency === 'once' ? '1' :
                                     expense.frequency === 'perDay' ? `${DATES.totalDays} days` :
                                     expense.customCount
-                                  } × {settings.students + settings.mentors} people
+                                  } × {settings.students + settings.mentors} people</div>
+                                  <div className="text-gray-500">≈ {formatPrice(expense.amount, settings.exchangeRate).kzt} per unit</div>
                                 </div>
                               </div>
                               <div className="flex gap-1">
@@ -1789,54 +1655,78 @@ function App() {
               <div className="space-y-2 text-sm">
                 <div className="flex justify-between pb-2 border-b">
                   <span className="text-gray-600">Hotel</span>
-                  <span className="font-medium">{formatCurrency(hotelCost.total, settings.primaryCurrency, settings.exchangeRate).primary}</span>
+                  <div className="text-right">
+                    <div className="font-medium">{formatPrice(hotelCost.total, settings.exchangeRate).hkd}</div>
+                    <div className="text-xs text-gray-500">{formatPrice(hotelCost.total, settings.exchangeRate).kzt}</div>
+                  </div>
                 </div>
                 
                 {flightsCost > 0 && (
                   <div className="flex justify-between pb-2 border-b">
                     <span className="text-gray-600">Flights</span>
-                    <span className="font-medium">{formatCurrency(flightsCost, settings.primaryCurrency, settings.exchangeRate).primary}</span>
+                    <div className="text-right">
+                      <div className="font-medium">{formatPrice(flightsCost, settings.exchangeRate).hkd}</div>
+                      <div className="text-xs text-gray-500">{formatPrice(flightsCost, settings.exchangeRate).kzt}</div>
+                    </div>
                   </div>
                 )}
                 
                 {mentorMealCost > 0 && (
                   <div className="flex justify-between pb-2 border-b">
                     <span className="text-gray-600">Mentor Meals</span>
-                    <span className="font-medium">{formatCurrency(mentorMealCost, settings.primaryCurrency, settings.exchangeRate).primary}</span>
+                    <div className="text-right">
+                      <div className="font-medium">{formatPrice(mentorMealCost, settings.exchangeRate).hkd}</div>
+                      <div className="text-xs text-gray-500">{formatPrice(mentorMealCost, settings.exchangeRate).kzt}</div>
+                    </div>
                   </div>
                 )}
                 
                 {transportCost > 0 && (
                   <div className="flex justify-between pb-2 border-b">
                     <span className="text-gray-600">Transport</span>
-                    <span className="font-medium">{formatCurrency(transportCost, settings.primaryCurrency, settings.exchangeRate).primary}</span>
+                    <div className="text-right">
+                      <div className="font-medium">{formatPrice(transportCost, settings.exchangeRate).hkd}</div>
+                      <div className="text-xs text-gray-500">{formatPrice(transportCost, settings.exchangeRate).kzt}</div>
+                    </div>
                   </div>
                 )}
                 
                 {mealCost > 0 && (
                   <div className="flex justify-between pb-2 border-b">
                     <span className="text-gray-600">Student Meals</span>
-                    <span className="font-medium">{formatCurrency(mealCost, settings.primaryCurrency, settings.exchangeRate).primary}</span>
+                    <div className="text-right">
+                      <div className="font-medium">{formatPrice(mealCost, settings.exchangeRate).hkd}</div>
+                      <div className="text-xs text-gray-500">{formatPrice(mealCost, settings.exchangeRate).kzt}</div>
+                    </div>
                   </div>
                 )}
                 
                 {activitiesCost > 0 && (
                   <div className="flex justify-between pb-2 border-b">
                     <span className="text-gray-600">Activities</span>
-                    <span className="font-medium">{formatCurrency(activitiesCost, settings.primaryCurrency, settings.exchangeRate).primary}</span>
+                    <div className="text-right">
+                      <div className="font-medium">{formatPrice(activitiesCost, settings.exchangeRate).hkd}</div>
+                      <div className="text-xs text-gray-500">{formatPrice(activitiesCost, settings.exchangeRate).kzt}</div>
+                    </div>
                   </div>
                 )}
                 
                 {customExpensesCost > 0 && (
                   <div className="flex justify-between pb-2 border-b">
                     <span className="text-gray-600">Custom Expenses</span>
-                    <span className="font-medium">{formatCurrency(customExpensesCost, settings.primaryCurrency, settings.exchangeRate).primary}</span>
+                    <div className="text-right">
+                      <div className="font-medium">{formatPrice(customExpensesCost, settings.exchangeRate).hkd}</div>
+                      <div className="text-xs text-gray-500">{formatPrice(customExpensesCost, settings.exchangeRate).kzt}</div>
+                    </div>
                   </div>
                 )}
                 
                 <div className="flex justify-between pt-2 text-lg font-bold">
                   <span>Total Cost</span>
-                  <span className="text-orange-600">{formatCurrency(totalCost, settings.primaryCurrency, settings.exchangeRate).primary}</span>
+                  <div className="text-right">
+                    <div className="text-orange-600">{formatPrice(totalCost, settings.exchangeRate).hkd}</div>
+                    <div className="text-sm text-gray-500">{formatPrice(totalCost, settings.exchangeRate).kzt}</div>
+                  </div>
                 </div>
               </div>
             </div>
@@ -1850,22 +1740,34 @@ function App() {
               <div className="space-y-2 text-sm">
                 <div className="flex justify-between pb-2 border-b border-green-200">
                   <span className="font-medium">Ментор ({marginDistribution.mentor}%)</span>
-                  <span className="font-bold text-green-600">{formatCurrency(netMentor, settings.primaryCurrency, settings.exchangeRate).primary}</span>
+                  <div className="text-right">
+                    <div className="font-bold text-green-600">{formatPrice(netMentor, settings.exchangeRate).hkd}</div>
+                    <div className="text-xs text-gray-500">{formatPrice(netMentor, settings.exchangeRate).kzt}</div>
+                  </div>
                 </div>
                 
                 <div className="flex justify-between pb-2 border-b border-green-200">
                   <span className="font-medium">Аяжан ({marginDistribution.ayazhan}%)</span>
-                  <span className="font-bold text-green-600">{formatCurrency(netAyazhan, settings.primaryCurrency, settings.exchangeRate).primary}</span>
+                  <div className="text-right">
+                    <div className="font-bold text-green-600">{formatPrice(netAyazhan, settings.exchangeRate).hkd}</div>
+                    <div className="text-xs text-gray-500">{formatPrice(netAyazhan, settings.exchangeRate).kzt}</div>
+                  </div>
                 </div>
                 
                 <div className="flex justify-between pb-2 border-b border-green-200">
                   <span className="font-medium">Бекс ({marginDistribution.beks}%)</span>
-                  <span className="font-bold text-green-600">{formatCurrency(netBeks, settings.primaryCurrency, settings.exchangeRate).primary}</span>
+                  <div className="text-right">
+                    <div className="font-bold text-green-600">{formatPrice(netBeks, settings.exchangeRate).hkd}</div>
+                    <div className="text-xs text-gray-500">{formatPrice(netBeks, settings.exchangeRate).kzt}</div>
+                  </div>
                 </div>
                 
                 <div className="flex justify-between pb-2 border-b border-green-200">
                   <span className="font-medium">Tair ({marginDistribution.tair}%)</span>
-                  <span className="font-bold text-green-600">{formatCurrency(netTair, settings.primaryCurrency, settings.exchangeRate).primary}</span>
+                  <div className="text-right">
+                    <div className="font-bold text-green-600">{formatPrice(netTair, settings.exchangeRate).hkd}</div>
+                    <div className="text-xs text-gray-500">{formatPrice(netTair, settings.exchangeRate).kzt}</div>
+                  </div>
                 </div>
               </div>
             </div>
