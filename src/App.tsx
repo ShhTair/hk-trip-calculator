@@ -273,15 +273,17 @@ function App() {
   const calculateHotelCost = () => {
     const studentPairs = Math.floor(settings.students / 2);
     const studentSingles = settings.students % 2;
-    const mentorSingles = settings.mentors;
+    const mentorRooms = settings.mentors; // Each mentor gets their own pair room (queen bed)
     
-    const pairsCost = studentPairs * selectedHotel.pricePerPair;
-    const singlesCost = (studentSingles + mentorSingles) * selectedHotel.pricePerPerson;
+    // Students in pairs + odd student in pair room (queen bed) + each mentor in pair room (queen bed)
+    const totalPairRooms = studentPairs + studentSingles + mentorRooms;
+    const totalCost = totalPairRooms * selectedHotel.pricePerPair;
     
     return {
-      total: pairsCost + singlesCost,
+      total: totalCost,
       pairs: studentPairs,
-      singles: studentSingles + mentorSingles
+      soloRooms: studentSingles + mentorRooms, // Rooms with 1 person (but still pair/queen size)
+      totalRooms: totalPairRooms
     };
   };
 
@@ -539,9 +541,9 @@ function App() {
                 <div className="text-sm space-y-2">
                   <div className="flex justify-between items-start">
                     <div>
-                      <div>• Hotel ({hotelCost.pairs} pair{hotelCost.pairs !== 1 ? 's' : ''} + {hotelCost.singles} single{hotelCost.singles !== 1 ? 's' : ''})</div>
+                      <div>• Hotel ({hotelCost.totalRooms} room{hotelCost.totalRooms !== 1 ? 's' : ''})</div>
                       <div className="text-xs text-gray-500 ml-3 mt-0.5">
-                        Students in pairs, {settings.mentors} mentor{settings.mentors !== 1 ? 's' : ''} in singles{settings.students % 2 > 0 ? ', +1 student single' : ''}
+                        {hotelCost.pairs} pair{hotelCost.pairs !== 1 ? 's' : ''} (students together){hotelCost.soloRooms > 0 ? `, ${hotelCost.soloRooms} solo (${settings.students % 2 > 0 ? '1 student + ' : ''}${settings.mentors} mentor${settings.mentors !== 1 ? 's' : ''})` : ''}
                       </div>
                     </div>
                     <span className="ml-2">{formatPrice(hotelCost.total, settings.exchangeRate).hkd}</span>
@@ -1662,7 +1664,7 @@ function App() {
                   <div>
                     <span className="text-gray-600">Hotel</span>
                     <div className="text-xs text-gray-500 mt-0.5">
-                      {hotelCost.pairs} pair room{hotelCost.pairs !== 1 ? 's' : ''} (students) + {hotelCost.singles} single{hotelCost.singles !== 1 ? 's' : ''} ({settings.students % 2 > 0 ? '1 student + ' : ''}{settings.mentors} mentor{settings.mentors !== 1 ? 's' : ''})
+                      {hotelCost.totalRooms} room{hotelCost.totalRooms !== 1 ? 's' : ''}: {hotelCost.pairs} pair{hotelCost.pairs !== 1 ? 's' : ''} (students together){hotelCost.soloRooms > 0 ? `, ${hotelCost.soloRooms} solo (${settings.students % 2 > 0 ? '1 student + ' : ''}${settings.mentors} mentor${settings.mentors !== 1 ? 's' : ''})` : ''}
                     </div>
                   </div>
                   <div className="text-right">
