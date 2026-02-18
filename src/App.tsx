@@ -14,8 +14,7 @@ interface Settings {
 interface Hotel {
   id: string;
   name: string;
-  pricePerPerson: number;
-  pricePerPair: number;
+  pricePerPair: number; // Only pair rooms exist (queen bed)
   includesBreakfast: boolean;
   includesTransfer: boolean;
   url: string;
@@ -87,7 +86,6 @@ const INITIAL_HOTELS: Hotel[] = [
   {
     id: 'beacon',
     name: 'The BEACON',
-    pricePerPerson: 3876,
     pricePerPair: 7752,
     includesBreakfast: false,
     includesTransfer: false,
@@ -97,7 +95,6 @@ const INITIAL_HOTELS: Hotel[] = [
   {
     id: 'dorsett',
     name: 'Dorsett Mongkok',
-    pricePerPerson: 4451.5,
     pricePerPair: 8903,
     includesBreakfast: true,
     includesTransfer: true,
@@ -389,7 +386,6 @@ function App() {
     const newHotel: Hotel = {
       id: `hotel-${Date.now()}`,
       name: 'New Hotel',
-      pricePerPerson: 0,
       pricePerPair: 0,
       includesBreakfast: false,
       includesTransfer: false,
@@ -1204,18 +1200,6 @@ function App() {
                                   ≈ {formatPrice(editingHotel.pricePerPair, settings.exchangeRate).kzt}
                                 </div>
                               </div>
-                              <div>
-                                <input
-                                  type="number"
-                                  value={editingHotel.pricePerPerson}
-                                  onChange={(e) => setEditingHotel({ ...editingHotel, pricePerPerson: parseFloat(e.target.value) || 0 })}
-                                  placeholder="Price/solo (HKD)"
-                                  className="w-full px-2 py-1 border border-gray-300 rounded text-sm"
-                                />
-                                <div className="text-xs text-gray-600 mt-1">
-                                  ≈ {formatPrice(editingHotel.pricePerPerson, settings.exchangeRate).kzt}
-                                </div>
-                              </div>
                             </div>
                             <input
                               type="text"
@@ -1285,12 +1269,8 @@ function App() {
                                 <h3 className="font-bold text-sm">{hotel.name}</h3>
                                 <div className="text-xs text-gray-600 mt-1 space-y-0.5">
                                   <div>
-                                    <div>Pair: {formatPrice(hotel.pricePerPair, settings.exchangeRate).hkd}</div>
+                                    <div>Price/room: {formatPrice(hotel.pricePerPair, settings.exchangeRate).hkd}</div>
                                     <div className="text-gray-500">≈ {formatPrice(hotel.pricePerPair, settings.exchangeRate).kzt}</div>
-                                  </div>
-                                  <div>
-                                    <div>Solo: {formatPrice(hotel.pricePerPerson, settings.exchangeRate).hkd}</div>
-                                    <div className="text-gray-500">≈ {formatPrice(hotel.pricePerPerson, settings.exchangeRate).kzt}</div>
                                   </div>
                                 </div>
                               </div>
