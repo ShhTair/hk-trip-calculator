@@ -537,9 +537,14 @@ function App() {
               <div className="bg-orange-50 border border-orange-200 rounded-lg p-4">
                 <h3 className="font-bold text-lg text-orange-800 mb-2">💸 All Costs (Itemized)</h3>
                 <div className="text-sm space-y-2">
-                  <div className="flex justify-between">
-                    <span>• Hotel ({hotelCost.pairs} pairs + {hotelCost.singles} singles)</span>
-                    <span>{formatPrice(hotelCost.total, settings.exchangeRate).hkd}</span>
+                  <div className="flex justify-between items-start">
+                    <div>
+                      <div>• Hotel ({hotelCost.pairs} pair{hotelCost.pairs !== 1 ? 's' : ''} + {hotelCost.singles} single{hotelCost.singles !== 1 ? 's' : ''})</div>
+                      <div className="text-xs text-gray-500 ml-3 mt-0.5">
+                        Students in pairs, {settings.mentors} mentor{settings.mentors !== 1 ? 's' : ''} in singles{settings.students % 2 > 0 ? ', +1 student single' : ''}
+                      </div>
+                    </div>
+                    <span className="ml-2">{formatPrice(hotelCost.total, settings.exchangeRate).hkd}</span>
                   </div>
                   {flightsCost > 0 && (
                     <div className="flex justify-between">
@@ -1654,7 +1659,12 @@ function App() {
               
               <div className="space-y-2 text-sm">
                 <div className="flex justify-between pb-2 border-b">
-                  <span className="text-gray-600">Hotel</span>
+                  <div>
+                    <span className="text-gray-600">Hotel</span>
+                    <div className="text-xs text-gray-500 mt-0.5">
+                      {hotelCost.pairs} pair room{hotelCost.pairs !== 1 ? 's' : ''} (students) + {hotelCost.singles} single{hotelCost.singles !== 1 ? 's' : ''} ({settings.students % 2 > 0 ? '1 student + ' : ''}{settings.mentors} mentor{settings.mentors !== 1 ? 's' : ''})
+                    </div>
+                  </div>
                   <div className="text-right">
                     <div className="font-medium">{formatPrice(hotelCost.total, settings.exchangeRate).hkd}</div>
                     <div className="text-xs text-gray-500">{formatPrice(hotelCost.total, settings.exchangeRate).kzt}</div>
